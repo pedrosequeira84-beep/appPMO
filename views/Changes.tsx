@@ -5,6 +5,8 @@ import { Change, Project } from '../types';
 import { supabase } from '../utils/supabase';
 import SearchableSelect from '../components/SearchableSelect';
 import { formatDate } from '../utils/helpers';
+import { exportTimelineToExcel, downloadTimelineWordReport, getDaysDiff } from '../utils/timelineExport';
+
 
 interface ChangeRowProps {
     change: Change;
@@ -60,8 +62,34 @@ export const ChangesView: React.FC = () => {
     // Filtros
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('Todos');
-    const [selectedProjectId, setSelectedProjectId] = useState('Todos');
-    const [viewMode, setViewMode] = useState<'grouped' | 'list'>('grouped');
+    const [selectedProjectId, setSelectedProjectId] = useState(() => {
+        const saved = localStorage.getItem('changes_selected_project_id');
+        if (saved) {
+            localStorage.removeItem('changes_selected_project_id');
+            return saved;
+        }
+        return 'Todos';
+    });
+    const [preselectedProjectIds, setPreselectedProjectIds] = useState<string[]>(() => {
+        const saved = localStorage.getItem('changes_selected_project_ids');
+        if (saved) {
+            localStorage.removeItem('changes_selected_project_ids');
+            try {
+                return JSON.parse(saved);
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    });
+    const [viewMode, setViewMode] = useState<'grouped' | 'list' | 'timeline'>(() => {
+        const saved = localStorage.getItem('changes_view_mode');
+        if (saved === 'timeline' || saved === 'grouped' || saved === 'list') {
+            localStorage.removeItem('changes_view_mode');
+            return saved as any;
+        }
+        return 'grouped';
+    });
 
     const handleNew = () => {
         setEditingChange(null);
@@ -190,6 +218,107 @@ export const ChangesView: React.FC = () => {
         return groups;
     }, [sortedChanges]);
 
+    const matchingProjects = React.useMemo(() => {
+        return projects.filter(p => {
+            if (preselectedProjectIds.length > 0 && !preselectedProjectIds.includes(p.id)) return false;
+            if (selectedProjectId !== 'Todos' && p.id !== selectedProjectId) return false;
+            
+            const searchLower = searchTerm.toLowerCase().trim();
+            if (!searchLower) return true;
+            
+            return (p.name || '').toLowerCase().includes(searchLower) ||
+                (p.clientName || '').toLowerCase().includes(searchLower) ||
+                (p.pm || '').toLowerCase().includes(searchLower) ||
+                (p.opportunityNumber || '').toLowerCase().includes(searchLower);
+        }).sort((a, b) => {
+            const devA = a.realEndDate ? getDaysDiff(a.theoreticalEndDate, a.realEndDate) : 0;
+            const devB = b.realEndDate ? getDaysDiff(b.theoreticalEndDate, b.realEndDate) : 0;
+            if (devA !== devB) return devB - devA;
+            return a.name.localeCompare(b.name);
+        });
+    }, [projects, selectedProjectId, searchTerm, preselectedProjectIds]);
+
+    const metrics = React.useMemo(() => {
+        let totalDays = 0;
+        let delayedCount = 0;
+        const typeTally: Record<string, number> = {};
+
+        matchingProjects.forEach(p => {
+            const dev = p.realEndDate ? getDaysDiff(p.theoreticalEndDate, p.realEndDate) : 0;
+            if (dev > 0) {
+                totalDays += dev;
+                delayedCount++;
+            }
+
+            const history = p.dateChangeHistory || [];
+            history.forEach(entry => {
+                const shift = entry.previousDate ? getDaysDiff(entry.previousDate, entry.newDate) : 0;
+                if (shift > 0) {
+                    const associatedChanges = changes.filter(c => entry.changeIds.includes(c.id));
+                    associatedChanges.forEach(c => {
+                        const typeLabel = c.type === 'Scope' ? 'Alcance' :
+                                        c.type === 'Timeline' ? 'Cronograma' :
+                                        c.type === 'Budget' ? 'Presupuesto' :
+                                        c.type === 'Resource' ? 'Recursos' : 'Otros';
+                        typeTally[typeLabel] = (typeTally[typeLabel] || 0) + shift;
+                    });
+                }
+            });
+        });
+
+        let topDriver = 'Ninguno';
+        let maxDays = 0;
+        Object.entries(typeTally).forEach(([type, days]) => {
+            if (days > maxDays) {
+                maxDays = days;
+                topDriver = type;
+            }
+        });
+
+        const avgDev = matchingProjects.length > 0 ? Math.round(totalDays / matchingProjects.length) : 0;
+
+        return {
+            totalDays,
+            delayedCount,
+            totalCount: matchingProjects.length,
+            avgDev,
+            topDriver,
+            topDriverDays: maxDays
+        };
+    }, [matchingProjects, changes]);
+
+    const copyPPTResumen = () => {
+        let text = "REPORTE DE DESVÍOS Y CONTROL DE CAMBIOS - PMO BGH TECH PARTNER\n";
+        text += `Generado el: ${new Date().toLocaleDateString('es-AR')}\n`;
+        text += "========================================================================\n\n";
+
+        matchingProjects.forEach(p => {
+            const netDev = p.realEndDate ? getDaysDiff(p.theoreticalEndDate, p.realEndDate) : 0;
+            text += `PROYECTO: ${p.opportunityNumber} - ${p.name}\n`;
+            text += `Cliente: ${p.clientName} | PM: ${p.pm}\n`;
+            text += `Cronograma: ${formatDate(p.startDate)} al ${formatDate(p.theoreticalEndDate)} (Original) ➔ ${p.realEndDate ? formatDate(p.realEndDate) : formatDate(p.theoreticalEndDate)} (Real actual)\n`;
+            text += `Desvío Total: ${netDev > 0 ? `+${netDev} días` : 'En Cronograma'}\n`;
+            text += "Historial de Cambios:\n";
+            
+            const history = p.dateChangeHistory || [];
+            if (history.length > 0) {
+                history.forEach((entry, idx) => {
+                    const shift = entry.previousDate ? getDaysDiff(entry.previousDate, entry.newDate) : 0;
+                    const associated = changes.filter(c => entry.changeIds.includes(c.id));
+                    const ref = associated.map(c => c.registrationNumber).join(', ') || 'N/A';
+                    const desc = associated.map(c => c.description).join(' | ') || 'Sin justificación';
+                    text += `  [${idx + 1}] ${formatDate(entry.changedAt)}: ${entry.previousDate ? formatDate(entry.previousDate) : 'Inicio'} ➔ ${formatDate(entry.newDate)} (+${shift}d) | Ref: ${ref} | Motivo: ${desc}\n`;
+                });
+            } else {
+                text += "  (Sin desvíos de cronograma registrados)\n";
+            }
+            text += "------------------------------------------------------------------------\n\n";
+        });
+
+        navigator.clipboard.writeText(text);
+        showToast("Resumen copiado al portapapeles", "success");
+    };
+
     return (
         <div className="fade-in space-y-10 pb-20">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -204,6 +333,9 @@ export const ChangesView: React.FC = () => {
                         </button>
                         <button onClick={() => setViewMode('list')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-gray-400 hover:text-gray-600'}`}>
                             HISTORIAL
+                        </button>
+                        <button onClick={() => setViewMode('timeline')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${viewMode === 'timeline' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-gray-400 hover:text-gray-600'}`}>
+                            DESVÍOS DE TIEMPO
                         </button>
                     </div>
                     <button onClick={handleNew} className="bg-gray-900 dark:bg-white dark:text-gray-900 text-white px-8 py-4 rounded-2xl shadow-2xl transition-all flex items-center font-black text-sm tracking-widest hover:scale-105 active:scale-95">
@@ -243,7 +375,234 @@ export const ChangesView: React.FC = () => {
                 </div>
             </div>
 
-            {viewMode === 'grouped' ? (
+            {preselectedProjectIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 p-4 bg-indigo-50/50 dark:bg-slate-800/50 rounded-2xl border border-indigo-100 dark:border-slate-800/60 animate-in fade-in">
+                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mr-2">Filtro Activo de Proyectos:</span>
+                    <div className="flex items-center gap-2 bg-white dark:bg-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-sm border dark:border-slate-600">
+                        <span className="text-gray-500 dark:text-gray-400">Proyectos Seleccionados:</span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{preselectedProjectIds.length} ítems</span>
+                        <button onClick={() => setPreselectedProjectIds([])} className="text-gray-400 hover:text-red-500 transition-colors ml-1" title="Limpiar filtro de selección">
+                            <i className="fas fa-times-circle"></i>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {viewMode === 'timeline' ? (
+                <div className="space-y-12 animate-in fade-in duration-300">
+                    {/* Metapanel Ejecutivo */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="bg-white dark:bg-dark-card p-6 rounded-[24px] border border-gray-100 dark:border-dark-border shadow-lg shadow-gray-200/5">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Desvío Acumulado</p>
+                            <h4 className="text-3xl font-black text-red-500 flex items-baseline gap-1">
+                                {metrics.totalDays} <span className="text-xs font-bold text-gray-400">días</span>
+                            </h4>
+                            <p className="text-[10px] text-gray-400 mt-2 font-medium">Suma de desplazamientos de fecha</p>
+                        </div>
+                        <div className="bg-white dark:bg-dark-card p-6 rounded-[24px] border border-gray-100 dark:border-dark-border shadow-lg shadow-gray-200/5">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Proyectos Desviados</p>
+                            <h4 className="text-3xl font-black text-indigo-600 flex items-baseline gap-1">
+                                {metrics.delayedCount} <span className="text-xs font-bold text-gray-400">/ {metrics.totalCount}</span>
+                            </h4>
+                            <p className="text-[10px] text-gray-400 mt-2 font-medium">Proyectos activos con demoras</p>
+                        </div>
+                        <div className="bg-white dark:bg-dark-card p-6 rounded-[24px] border border-gray-100 dark:border-dark-border shadow-lg shadow-gray-200/5">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Promedio Desvío</p>
+                            <h4 className="text-3xl font-black text-amber-500 flex items-baseline gap-1">
+                                {metrics.avgDev} <span className="text-xs font-bold text-gray-400">días</span>
+                            </h4>
+                            <p className="text-[10px] text-gray-400 mt-2 font-medium">Retraso medio por proyecto</p>
+                        </div>
+                        <div className="bg-white dark:bg-dark-card p-6 rounded-[24px] border border-gray-100 dark:border-dark-border shadow-lg shadow-gray-200/5">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Principal Causa</p>
+                            <h4 className="text-base font-black text-purple-600 truncate mt-1.5" title={metrics.topDriver}>
+                                {metrics.topDriver}
+                            </h4>
+                            <p className="text-[10px] text-gray-400 mt-2 font-medium">Driver con más impacto ({metrics.topDriverDays}d)</p>
+                        </div>
+                    </div>
+
+                    {/* Acciones Rápidas */}
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-100 dark:bg-slate-800/40 p-5 rounded-[24px] border dark:border-slate-800">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                            <i className="fas fa-info-circle text-indigo-500"></i>
+                            Exporta el informe consolidado filtrado actualmente
+                        </span>
+                        <div className="flex flex-wrap gap-3">
+                            <button onClick={() => exportTimelineToExcel(matchingProjects, changes)} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs transition-all tracking-wider shadow-lg shadow-emerald-500/10 hover:scale-105 active:scale-95">
+                                <i className="fas fa-file-excel"></i> EXPORTAR EXCEL
+                            </button>
+                            <button onClick={() => downloadTimelineWordReport(matchingProjects, changes)} className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs transition-all tracking-wider shadow-lg shadow-blue-500/10 hover:scale-105 active:scale-95">
+                                <i className="fas fa-file-word"></i> DESCARGAR WORD (.DOC)
+                            </button>
+                            <button onClick={copyPPTResumen} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs transition-all tracking-wider shadow-lg shadow-indigo-500/10 hover:scale-105 active:scale-95">
+                                <i className="fas fa-copy"></i> COPIAR PARA PPT
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Listado de Tarjetas */}
+                    <div className="space-y-8">
+                        {matchingProjects.length > 0 ? (
+                            matchingProjects.map(p => {
+                                const duration = getDaysDiff(p.startDate, p.theoreticalEndDate) || 1;
+                                const dev = p.realEndDate ? getDaysDiff(p.theoreticalEndDate, p.realEndDate) : 0;
+                                const isDelayed = dev > 0;
+                                const timelineHistory = p.dateChangeHistory || [];
+
+                                return (
+                                    <div key={p.id} className="bg-white dark:bg-dark-card p-8 rounded-[32px] border border-gray-100 dark:border-dark-border shadow-2xl shadow-gray-200/5 space-y-8">
+                                        {/* Cabecera Tarjeta */}
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-50 dark:border-slate-800/80 pb-6">
+                                            <div>
+                                                <div className="flex items-center gap-3 mb-2.5 flex-wrap">
+                                                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full uppercase tracking-widest">{p.opportunityNumber || 'S/N'}</span>
+                                                    <span className="text-[9px] font-black text-gray-500 bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full uppercase">{p.clientName || 'Sin Cliente'}</span>
+                                                    <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase ${p.status === 'Finalizado' ? 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-gray-400' : 'bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400'}`}>{p.status}</span>
+                                                </div>
+                                                <h3 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight leading-none">{p.name}</h3>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-3 flex items-center gap-1.5">
+                                                    <i className="fas fa-user-tie text-indigo-500"></i> PM: <span className="text-gray-700 dark:text-gray-300">{p.pm || 'Sin PM'}</span>
+                                                </p>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Desvío de Cronograma</span>
+                                                    {isDelayed ? (
+                                                        <span className={`px-4 py-2 rounded-2xl text-xs font-black tracking-wider flex items-center gap-2 border shadow-sm ${dev > 15 ? 'bg-red-50 text-red-700 border-red-100 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/30' : 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30'}`}>
+                                                            <i className="fas fa-exclamation-triangle"></i>
+                                                            +{dev} DÍAS ({dev > 15 ? 'CRÍTICO' : 'MODERADO'})
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-4 py-2 bg-green-50 text-green-700 border border-green-100 dark:bg-green-950/20 dark:text-green-400 dark:border-green-900/30 rounded-2xl text-xs font-black tracking-wider flex items-center gap-2 shadow-sm">
+                                                            <i className="fas fa-check-circle"></i>
+                                                            AL DÍA / SIN DESVÍOS
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Resumen de Fechas Hito */}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="bg-gray-50 dark:bg-slate-800/10 p-5 rounded-2xl border border-gray-100/50 dark:border-slate-800/40">
+                                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">Fecha Inicio Original</span>
+                                                <span className="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                                    <i className="fas fa-calendar-alt text-indigo-500"></i> {formatDate(p.startDate)}
+                                                </span>
+                                            </div>
+                                            <div className="bg-gray-50 dark:bg-slate-800/10 p-5 rounded-2xl border border-gray-100/50 dark:border-slate-800/40">
+                                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">Fin Teórico Planificado</span>
+                                                <span className="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                                    <i className="fas fa-calendar-alt text-indigo-500"></i> {formatDate(p.theoreticalEndDate)}
+                                                </span>
+                                            </div>
+                                            <div className="bg-gray-50 dark:bg-slate-800/10 p-5 rounded-2xl border border-gray-100/50 dark:border-slate-800/40">
+                                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">Fin Estimado Real</span>
+                                                <span className="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                                    <i className="fas fa-calendar-check text-indigo-500"></i> {p.realEndDate ? formatDate(p.realEndDate) : formatDate(p.theoreticalEndDate)}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Barra de Proporción Gráfica */}
+                                        <div className="space-y-2.5">
+                                            <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                                <span>Planificación Original ({duration} días)</span>
+                                                {isDelayed && <span className="text-red-500 font-bold">Desplazamiento (+{dev} días)</span>}
+                                            </div>
+                                            <div className="w-full bg-slate-100 dark:bg-slate-800/60 rounded-full h-6 overflow-hidden flex shadow-inner border dark:border-slate-800">
+                                                <div className="bg-indigo-600 h-full text-[9px] font-black text-white flex items-center justify-center transition-all border-r border-indigo-700/20" style={{ width: `${Math.round((duration / (duration + dev)) * 100)}%` }}>
+                                                    Teórico Original ({duration}d)
+                                                </div>
+                                                {isDelayed && (
+                                                    <div className="bg-red-500 h-full text-[9px] font-black text-white flex items-center justify-center" style={{ width: `${Math.round((dev / (duration + dev)) * 100)}%` }}>
+                                                        +{dev}d ({Math.round((dev / duration) * 100)}%)
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Historial Timeline Vertical */}
+                                        <div className="pt-6 border-t border-gray-50 dark:border-slate-800/80">
+                                            <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                                <i className="fas fa-history"></i> Historial de Variaciones y Justificaciones
+                                            </h4>
+
+                                            {timelineHistory.length > 0 ? (
+                                                <div className="relative border-l-2 border-dashed border-indigo-200 dark:border-slate-700 pl-8 ml-4 space-y-8">
+                                                    {timelineHistory
+                                                        .slice()
+                                                        .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime())
+                                                        .map((entry, idx) => {
+                                                            const shiftDays = entry.previousDate ? getDaysDiff(entry.previousDate, entry.newDate) : 0;
+                                                            const associated = changes.filter(c => entry.changeIds.includes(c.id));
+
+                                                            return (
+                                                                <div key={entry.id} className="relative group/node">
+                                                                    <div className="absolute -left-[41px] top-1.5 w-6 h-6 rounded-full bg-white dark:bg-slate-900 border-4 border-indigo-500 shadow-md flex items-center justify-center transition-all group-hover/node:scale-110">
+                                                                        <span className="text-[8px] font-black text-indigo-500">{idx + 1}</span>
+                                                                    </div>
+                                                                    <div className="bg-slate-50/50 dark:bg-slate-800/10 p-5 rounded-2xl border border-gray-50 dark:border-slate-800/40 space-y-3">
+                                                                        <div className="flex flex-col md:flex-row justify-between md:items-center gap-2">
+                                                                            <div className="flex items-center gap-2 flex-wrap text-xs">
+                                                                                <span className="font-bold text-gray-400 font-mono">{formatDate(entry.changedAt)}</span>
+                                                                                <span className="text-gray-400">➔</span>
+                                                                                <span className="font-semibold bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-2.5 py-0.5 rounded font-mono">
+                                                                                    {entry.previousDate ? formatDate(entry.previousDate) : 'Origen'}
+                                                                                </span>
+                                                                                <i className="fas fa-arrow-right text-[10px] text-gray-400"></i>
+                                                                                <span className="font-bold bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400 px-2.5 py-0.5 rounded font-mono">
+                                                                                    {formatDate(entry.newDate)}
+                                                                                </span>
+                                                                            </div>
+                                                                            <span className="px-3.5 py-1 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400 border border-red-100 dark:border-red-900/30 rounded-full text-[9px] font-black uppercase tracking-wider text-right self-start md:self-auto shadow-sm">
+                                                                                +{shiftDays} DÍAS CORRIDOS
+                                                                            </span>
+                                                                        </div>
+                                                                        
+                                                                        <div className="pt-2 border-t border-gray-100 dark:border-slate-800/30">
+                                                                            <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">Control de Cambio Aprobado</p>
+                                                                            {associated.length > 0 ? (
+                                                                                <div className="space-y-2">
+                                                                                    {associated.map(c => (
+                                                                                        <div key={c.id} className="text-xs leading-relaxed">
+                                                                                            <span className="font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded font-mono text-[9px] mr-2">{c.registrationNumber || 'CC-S/N'}</span>
+                                                                                            <span className="font-semibold text-slate-600 dark:text-slate-300">[{c.type === 'Scope' ? 'Alcance' : c.type === 'Timeline' ? 'Cronograma' : c.type === 'Budget' ? 'Presupuesto' : c.type === 'Resource' ? 'Recursos' : 'Otros'}]</span>
+                                                                                            <p className="text-gray-500 dark:text-gray-400 mt-1 italic pl-4 border-l-2 border-slate-200 dark:border-slate-700">"{c.description}"</p>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <p className="text-xs text-gray-400 italic">No hay un control de cambio detallado registrado para esta variación histórica.</p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                </div>
+                                            ) : (
+                                                <div className="bg-slate-50/50 dark:bg-slate-800/10 p-6 rounded-2xl border border-dashed border-gray-200 dark:border-slate-700 text-center">
+                                                    <p className="text-xs text-gray-400 italic">El proyecto no registra corrimientos de fecha de finalización. Se encuentra alineado al cronograma original.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="text-center py-24 bg-white dark:bg-dark-card rounded-[32px] border border-gray-100 dark:border-dark-border shadow-sm">
+                                <div className="w-16 h-16 bg-gray-50 dark:bg-slate-800 rounded-[24px] flex items-center justify-center mx-auto mb-6 transform rotate-12">
+                                    <i className="fas fa-search text-gray-300 dark:text-slate-700 fa-2x -rotate-12"></i>
+                                </div>
+                                <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">No se encontraron proyectos</h3>
+                                <p className="text-gray-400 max-w-xs mx-auto text-xs font-semibold">Prueba ajustando tu término de búsqueda o seleccionando otro filtro específico.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : viewMode === 'grouped' ? (
                 <div className="space-y-16">
                     {Object.entries(groupedByProject).map(([projId, changes]) => {
                         const project = projects.find(p => p.id === projId);
@@ -305,7 +664,7 @@ export const ChangesView: React.FC = () => {
                 </div>
             )}
 
-            {filteredChanges.length === 0 && (
+            {viewMode !== 'timeline' && filteredChanges.length === 0 && (
                 <div className="text-center py-40">
                     <div className="w-24 h-24 bg-gray-50 dark:bg-slate-800 rounded-[32px] flex items-center justify-center mx-auto mb-10 transform rotate-12">
                         <i className="fas fa-history text-gray-200 dark:text-slate-700 fa-3x -rotate-12"></i>

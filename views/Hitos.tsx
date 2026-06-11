@@ -30,7 +30,7 @@ const MilestoneCard: React.FC<MilestoneCardProps> = ({ milestone, project, onEdi
                         <div className="flex items-center gap-2 mb-1">
                             <span className={`w-3 h-3 rounded-full ${milestone.receivedAmount >= milestone.amount && milestone.amount > 0 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : milestone.receivedAmount > 0 ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`}></span>
                             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                {milestone.receivedAmount >= milestone.amount && milestone.amount > 0 ? 'Cobrado' : milestone.receivedAmount > 0 ? 'Parcial' : 'Pendiente'} {milestone.parentId && '(Sub-hito)'}
+                                {milestone.receivedAmount >= milestone.amount && milestone.amount > 0 ? 'Recepcionado' : milestone.receivedAmount > 0 ? 'Parcial' : 'Pendiente'} {milestone.parentId && '(Sub-hito)'}
                             </span>
                         </div>
                         <h4 className="font-bold text-gray-900 dark:text-white line-clamp-1">{project?.name || 'Proyecto Desconocido'}</h4>
@@ -59,7 +59,7 @@ const MilestoneCard: React.FC<MilestoneCardProps> = ({ milestone, project, onEdi
                         {milestone.description}
                     </p>
                     <div className="flex justify-between items-end mb-1">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase">{hasSubs ? 'Progreso consolidado subs' : 'Progreso de Cobro'}</span>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase">{hasSubs ? 'Progreso consolidado subs' : 'Progreso de Recepción'}</span>
                         <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{Math.round(hasSubs ? combinedPct : pct)}%</span>
                     </div>
                     <div className="w-full bg-gray-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden">
@@ -306,8 +306,8 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
             <div className="flex items-center gap-6 px-2">
                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Referencias:</span>
                 {[
-                    { color: 'bg-emerald-500', label: 'Cobrado (100%)' },
-                    { color: 'bg-blue-400', label: 'Cobro Parcial' },
+                    { color: 'bg-emerald-500', label: 'Recepcionado (100%)' },
+                    { color: 'bg-blue-400', label: 'Recepción Parcial' },
                     { color: 'bg-amber-400', label: 'Pendiente' },
                 ].map(({ color, label }) => (
                     <div key={label} className="flex items-center gap-2">
@@ -331,7 +331,7 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                         <span className="font-bold">{new Date(tooltip.m.date).toLocaleDateString('es-AR')}</span>
                         <span className="text-gray-400">Estado:</span>
                         <span className={`font-bold ${tooltip.m.receivedAmount >= tooltip.m.amount && tooltip.m.amount > 0 ? 'text-emerald-400' : tooltip.m.receivedAmount > 0 ? 'text-blue-400' : 'text-amber-400'}`}>
-                            {tooltip.m.receivedAmount >= tooltip.m.amount && tooltip.m.amount > 0 ? '✓ Cobrado' : tooltip.m.receivedAmount > 0 ? '◑ Parcial' : '◷ Pendiente'}
+                            {tooltip.m.receivedAmount >= tooltip.m.amount && tooltip.m.amount > 0 ? '✓ Recepcionado' : tooltip.m.receivedAmount > 0 ? '◑ Parcial' : '◷ Pendiente'}
                         </span>
                     </div>
                 </div>
@@ -558,30 +558,43 @@ export const HitosView: React.FC = () => {
     }, [milestones]);
 
     const sortedMilestones = React.useMemo(() => {
-        return [...filteredMilestones].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const getBilledPct = (projectId: string) => {
+            const projMs = filteredMilestones.filter(m => m.projectId === projectId);
+            const total = projMs.reduce((acc, m) => acc + m.amount, 0);
+            const received = projMs.reduce((acc, m) => acc + m.receivedAmount, 0);
+            if (total === 0) return 100; // Proyectos sin monto van al final
+            return (received / total) * 100;
+        };
+
+        return [...filteredMilestones].sort((a, b) => {
+            const pctA = getBilledPct(a.projectId);
+            const pctB = getBilledPct(b.projectId);
+            
+            if (pctA !== pctB) return pctA - pctB;
+            
+            return new Date(a.date).getTime() - new Date(b.date).getTime();
+        });
     }, [filteredMilestones]);
 
     const sortedProjectsWithMilestones = React.useMemo(() => {
-        const statusOrder: Record<string, number> = {
-            'En ejecución': 0,
-            'Soporte': 1,
-            'Intervención temprana': 2,
-            'Finalizado': 3
+        const getBilledPct = (projectId: string) => {
+            const projMs = filteredMilestones.filter(m => m.projectId === projectId);
+            const total = projMs.reduce((acc, m) => acc + m.amount, 0);
+            const received = projMs.reduce((acc, m) => acc + m.receivedAmount, 0);
+            if (total === 0) return 100; // Proyectos sin monto van al final
+            return (received / total) * 100;
         };
 
-        // Get unique project IDs from filtered milestones
         const projectIds = Array.from(new Set(filteredMilestones.map(m => m.projectId)));
 
-        // Get project objects and sort them
         return projects
             .filter(p => projectIds.includes(p.id))
             .sort((a, b) => {
-                const orderA = statusOrder[a.status] ?? 99;
-                const orderB = statusOrder[b.status] ?? 99;
-                if (orderA !== orderB) return orderA - orderB;
-                if (a.status === 'En ejecución') {
-                    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-                }
+                const pctA = getBilledPct(a.id);
+                const pctB = getBilledPct(b.id);
+                
+                if (pctA !== pctB) return pctA - pctB;
+
                 return a.name.localeCompare(b.name);
             });
     }, [projects, filteredMilestones]);
@@ -611,7 +624,7 @@ export const HitosView: React.FC = () => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                 <div>
                     <h2 className="text-4xl font-black text-gray-900 dark:text-white tracking-tighter">Hitos Facturables</h2>
-                    <p className="text-gray-500 dark:text-gray-400 font-medium">Control financiero y seguimiento de facturación</p>
+                    <p className="text-gray-500 dark:text-gray-400 font-medium">Control financiero y seguimiento de recepciones</p>
                 </div>
                 <div className="flex gap-3">
                     <div className="bg-white dark:bg-dark-card p-1.5 rounded-2xl border border-gray-100 dark:border-dark-border flex shadow-sm">
@@ -640,7 +653,7 @@ export const HitosView: React.FC = () => {
                     </div>
                 </div>
                 <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm">
-                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-3 block">Monto Cobrado</span>
+                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-3 block">Monto Recepcionado</span>
                     <div className="flex items-baseline gap-2">
                         <span className="text-3xl font-black text-emerald-600">USD {stats.cobrado.toLocaleString()}</span>
                         <span className="text-xs font-bold text-emerald-500/70">({stats.total > 0 ? Math.round((stats.cobrado / stats.total) * 100) : 0}%)</span>
@@ -664,11 +677,11 @@ export const HitosView: React.FC = () => {
                     </div>
                 </div>
                 <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Estado de Cobro</label>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Estado de Recepción</label>
                     <select className="w-full h-12 px-6 rounded-2xl bg-gray-50 dark:bg-slate-800/40 border-2 border-transparent focus:border-emerald-500/20 transition-all font-bold text-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}>
                         <option value="Todos">Todos los estados</option>
-                        <option value="Cobrado">Cobrados (100%)</option>
-                        <option value="Parcial">Cobros Parciales</option>
+                        <option value="Cobrado">Recepcionados (100%)</option>
+                        <option value="Parcial">Recepción Parcial</option>
                         <option value="Pendiente">Pendientes (0%)</option>
                     </select>
                 </div>
@@ -738,7 +751,7 @@ export const HitosView: React.FC = () => {
                                     </div>
                                     <div className="flex items-center gap-6 pl-16 md:pl-0">
                                         <div className="text-right hidden md:block">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Cobro del Proyecto</p>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Recepción del Proyecto</p>
                                             <div className="flex items-center gap-3 justify-end">
                                                 <div className="w-24 bg-gray-100 dark:bg-slate-800 rounded-full h-1.5">
                                                     <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${projPct}%` }}></div>
@@ -805,7 +818,7 @@ export const HitosView: React.FC = () => {
                         <div>
                             <h3 className="text-3xl font-black dark:text-white uppercase tracking-tighter leading-none mb-1">{editingMilestone ? 'Editar Hito' : 'Nuevo Hito'}</h3>
                             <p className="text-gray-500 font-medium">
-                                {formData.parentId ? 'Registrando monto parcial dentro de un hito principal' : 'Información financiera y seguimiento de cobro'}
+                                {formData.parentId ? 'Registrando monto parcial dentro de un hito principal' : 'Información financiera y seguimiento de recepciones'}
                             </p>
                         </div>
                     </div>
@@ -853,8 +866,8 @@ export const HitosView: React.FC = () => {
                             <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-[28px] md:col-span-2 space-y-6">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm font-black dark:text-white">Estado de Facturación/Cobro</p>
-                                        <p className="text-xs text-gray-500">¿Ya se ha recibido el pago?</p>
+                                        <p className="text-sm font-black dark:text-white">Estado de Recepción</p>
+                                        <p className="text-xs text-gray-500">¿Ya se cuenta con el Ok del cliente?</p>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <span className={`text-[10px] font-black uppercase tracking-widest ${formData.receivedAmount >= (formData.amount || 0) && (formData.amount || 0) > 0 ? 'text-emerald-500' : (formData.receivedAmount || 0) > 0 ? 'text-blue-500' : 'text-amber-500'}`}>
@@ -877,7 +890,7 @@ export const HitosView: React.FC = () => {
                                 </div>
 
                                 <div className="pt-4 border-t border-slate-200 dark:border-slate-700 fade-in">
-                                    <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Monto Cobrado (Efectivo)</label>
+                                    <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Monto Recepcionado</label>
                                     <div className="relative">
                                         <span className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-gray-400 text-sm">{formData.currency || 'USD'}</span>
                                         <input
@@ -895,7 +908,7 @@ export const HitosView: React.FC = () => {
                                         />
                                     </div>
                                     {formData.receivedAmount > 0 && formData.receivedAmount < (formData.amount || 0) && (
-                                        <p className="text-[10px] text-blue-500 font-bold mt-2 ml-1 uppercase tracking-tight italic">Cobro parcial detectado</p>
+                                        <p className="text-[10px] text-blue-500 font-bold mt-2 ml-1 uppercase tracking-tight italic">Recepción parcial detectada</p>
                                     )}
                                 </div>
                             </div>

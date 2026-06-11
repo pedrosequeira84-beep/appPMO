@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../AppContext';
-import { getPastWeeksKeys, getWeekKey, generateUUID, calculateProjectHealth, parseExcelNumber } from '../utils/helpers';
+import { getPastWeeksKeys, getWeekKey, generateUUID, calculateProjectHealth, parseExcelNumber, formatDate } from '../utils/helpers';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart } from 'recharts';
 import * as XLSX from 'xlsx';
 import { supabase } from '../utils/supabase';
@@ -8,6 +8,200 @@ import { Project, SEGMENTS, VERTICALS, VENDORS, ProjectStatusUpdate, COST_CATEGO
 
 export const DashboardView: React.FC = () => {
     const { projects, risks, milestones, capacityData, team, expenses, lessons, changes, setProjects, setRisks, setMilestones, setChanges, setLessons, setCapacityData, setTeam, setExpenses, showToast, user } = useApp();
+
+    // --- State y Cálculo para el Cronograma de Proyectos (Gantt H1/H2) ---
+    const activeProjects = useMemo(() => {
+        return projects.filter(p => p.status === 'En ejecución');
+    }, [projects]);
+
+    const [visibleProjectIds, setVisibleProjectIds] = useState<string[]>([]);
+    const [cleanView, setCleanView] = useState(false);
+    const [initialized, setInitialized] = useState(false);
+
+    // Inicializar los proyectos visibles con todos los activos al cargar
+    useEffect(() => {
+        if (activeProjects.length > 0 && !initialized) {
+            setVisibleProjectIds(activeProjects.map(p => p.id));
+            setInitialized(true);
+        }
+    }, [activeProjects, initialized]);
+
+    const getBarGradient = (index: number) => {
+        const gradients = [
+            'from-emerald-400 to-teal-500 shadow-emerald-500/10 dark:from-emerald-500 dark:to-teal-600',
+            'from-blue-400 to-indigo-500 shadow-blue-500/10 dark:from-blue-500 dark:to-indigo-600',
+            'from-violet-400 to-purple-500 shadow-purple-500/10 dark:from-violet-500 dark:to-purple-600',
+            'from-amber-400 to-orange-500 shadow-amber-500/10 dark:from-amber-500 dark:to-orange-600',
+            'from-pink-400 to-rose-500 shadow-pink-500/10 dark:from-pink-500 dark:to-rose-600',
+            'from-sky-400 to-cyan-500 shadow-cyan-500/10 dark:from-sky-500 dark:to-cyan-600',
+            'from-lime-400 to-green-500 shadow-green-500/10 dark:from-lime-500 dark:to-green-600',
+            'from-indigo-400 to-violet-500 shadow-indigo-500/10 dark:from-indigo-500 dark:to-violet-600',
+        ];
+        return gradients[index % gradients.length];
+    };
+
+    const getPillBg = (index: number, active: boolean) => {
+        if (!active) return 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200 dark:bg-slate-800 dark:text-gray-500 dark:border-slate-700 dark:hover:bg-slate-700/80';
+        const colors = [
+            'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-800 dark:hover:bg-emerald-950/40',
+            'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-950/20 dark:text-blue-300 dark:border-blue-800 dark:hover:bg-blue-950/40',
+            'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 dark:bg-violet-950/20 dark:text-violet-300 dark:border-violet-800 dark:hover:bg-violet-950/40',
+            'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-800 dark:hover:bg-amber-950/40',
+            'bg-pink-50 text-pink-700 border-pink-200 hover:bg-pink-100 dark:bg-pink-950/20 dark:text-pink-300 dark:border-pink-800 dark:hover:bg-pink-950/40',
+            'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100 dark:bg-sky-950/20 dark:text-sky-300 dark:border-sky-800 dark:hover:bg-sky-950/40',
+            'bg-lime-50 text-lime-700 border-lime-200 hover:bg-lime-100 dark:bg-lime-950/20 dark:text-lime-300 dark:border-lime-800 dark:hover:bg-lime-950/40',
+            'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-300 dark:border-indigo-800 dark:hover:bg-indigo-950/40',
+        ];
+        return colors[index % colors.length];
+    };
+
+    const timelineData = useMemo(() => {
+        const selectedProjects = activeProjects.filter(p => visibleProjectIds.includes(p.id));
+        
+        if (selectedProjects.length === 0) {
+            return { periods: [], fyHeaders: [], rows: [] };
+        }
+
+        const safeParseDate = (dateString?: string) => {
+            if (!dateString) return null;
+            const d = new Date(dateString + 'T00:00:00');
+            return isNaN(d.getTime()) ? null : d;
+        };
+
+        const mapped = selectedProjects.map(p => {
+            const start = safeParseDate(p.startDate) || new Date();
+            const end = safeParseDate(p.realEndDate) || safeParseDate(p.theoreticalEndDate) || new Date();
+            const theo = safeParseDate(p.theoreticalEndDate);
+            return {
+                id: p.id,
+                name: p.name,
+                clientName: p.clientName || '',
+                opportunityNumber: p.opportunityNumber || 'S/N',
+                start,
+                end,
+                theo,
+                realEndDate: p.realEndDate || null
+            };
+        });
+
+        // Ordenar en cascada por fecha de inicio
+        mapped.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+        // 1. Encontrar el inicio mínimo y fin máximo de los proyectos seleccionados
+        let minTime = Infinity;
+        let maxTime = -Infinity;
+
+        mapped.forEach(p => {
+            if (p.start.getTime() < minTime) minTime = p.start.getTime();
+            if (p.end.getTime() > maxTime) maxTime = p.end.getTime();
+        });
+
+        if (minTime === Infinity || maxTime === -Infinity) {
+            minTime = new Date().getTime();
+            maxTime = new Date().getTime();
+        }
+
+        // Agregar un margen de padding (ej. 5% de la duración total o mínimo 7 días)
+        const rawDuration = maxTime - minTime;
+        const padding = Math.max(7 * 24 * 60 * 60 * 1000, rawDuration * 0.05);
+        const timelineStart = minTime - padding;
+        const timelineEnd = maxTime + padding;
+        const totalDuration = timelineEnd - timelineStart;
+
+        // 2. Determinar semestres que se solapan con el timeline
+        const getSemesterVal = (date: Date) => {
+            const fy = date.getMonth() >= 6 ? date.getFullYear() : date.getFullYear() - 1;
+            const isH2 = date.getMonth() < 6;
+            return { fy, isH2, val: fy * 2 + (isH2 ? 1 : 0) };
+        };
+
+        const startSem = getSemesterVal(new Date(timelineStart));
+        const endSem = getSemesterVal(new Date(timelineEnd));
+
+        const periods: { fy: number; label: string; half: 'H1' | 'H2'; start: Date; end: Date; width: number }[] = [];
+        let totalCalculatedWidth = 0;
+
+        for (let val = startSem.val; val <= endSem.val; val++) {
+            const fy = Math.floor(val / 2);
+            const isH2 = val % 2 === 1;
+            
+            let semStart: Date;
+            let semEnd: Date;
+            let label = `FY ${fy}/${String(fy + 1).slice(2)}`;
+            let half: 'H1' | 'H2';
+
+            if (!isH2) {
+                semStart = new Date(fy, 6, 1);
+                semEnd = new Date(fy, 11, 31, 23, 59, 59);
+                half = 'H1';
+            } else {
+                semStart = new Date(fy + 1, 0, 1);
+                semEnd = new Date(fy + 1, 5, 30, 23, 59, 59);
+                half = 'H2';
+            }
+
+            // Intersección con el timeline
+            const intersectStart = Math.max(semStart.getTime(), timelineStart);
+            const intersectEnd = Math.min(semEnd.getTime(), timelineEnd);
+
+            if (intersectStart < intersectEnd) {
+                const width = ((intersectEnd - intersectStart) / totalDuration) * 100;
+                periods.push({
+                    fy,
+                    label,
+                    half,
+                    start: semStart,
+                    end: semEnd,
+                    width
+                });
+                totalCalculatedWidth += width;
+            }
+        }
+
+        // Ajustar el último período para asegurar que la suma sea exactamente 100% (evita problemas de redondeo)
+        if (periods.length > 0) {
+            const diff = 100 - totalCalculatedWidth;
+            periods[periods.length - 1].width += diff;
+        }
+
+        // 3. Agrupar períodos consecutivas por FY para cabeceras dinámicas con anchos calculados
+        const fyHeaders: { label: string; width: number }[] = [];
+        periods.forEach(p => {
+            const lastHeader = fyHeaders[fyHeaders.length - 1];
+            if (lastHeader && lastHeader.label === p.label) {
+                lastHeader.width += p.width;
+            } else {
+                fyHeaders.push({ label: p.label, width: p.width });
+            }
+        });
+
+        // 4. Calcular left y width para cada fila de proyecto en base al timeline exacto
+        const rows = mapped.map(p => {
+            const startMs = p.start.getTime();
+            const endMs = p.end.getTime();
+            
+            const left = Math.max(0, ((startMs - timelineStart) / totalDuration) * 100);
+            const rawWidth = ((endMs - startMs) / totalDuration) * 100;
+            const width = Math.max(1.5, Math.min(100 - left, rawWidth));
+
+            let relativeTheoLeft: number | null = null;
+            if (p.theo && p.theo.getTime() !== endMs) {
+                const theoMs = p.theo.getTime();
+                if (theoMs >= startMs && theoMs <= endMs) {
+                    relativeTheoLeft = ((theoMs - startMs) / (endMs - startMs)) * 100;
+                }
+            }
+
+            return {
+                ...p,
+                left,
+                width,
+                relativeTheoLeft
+            };
+        });
+
+        return { periods, fyHeaders, rows };
+    }, [activeProjects, visibleProjectIds]);
 
     // --- KPIs de Alto Nivel ---
     const activeProjectsCount = projects.filter(p => p.status === 'En ejecución' || p.status === 'Intervención temprana' || p.status === 'POC').length;
@@ -908,6 +1102,262 @@ export const DashboardView: React.FC = () => {
                 </div>
             </div>
 
+            {/* --- Cronograma del Portafolio de Proyectos (Gantt H1/H2) --- */}
+            <div className={`bg-white dark:bg-dark-card rounded-xl shadow-sm border border-gray-100 dark:border-dark-border mb-8 relative transition-all duration-300 ${cleanView ? 'p-8 ring-2 ring-indigo-500/20' : 'p-6'}`}>
+                {cleanView && (
+                    <button
+                        onClick={() => setCleanView(false)}
+                        className="absolute top-4 right-4 z-40 bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-500 px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg hover:shadow-indigo-500/20 transition-all flex items-center gap-1.5 animate-pulse"
+                        title="Haga clic para volver a mostrar los controles de selección"
+                    >
+                        <i className="fas fa-eye text-white"></i>
+                        <span>Restaurar Controles</span>
+                    </button>
+                )}
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h3 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                            <i className="fas fa-calendar-alt text-indigo-500"></i>
+                            Cronograma del Portafolio de Proyectos
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Distribución temporal de proyectos activos por Año Fiscal y Semestres (H1/H2)
+                        </p>
+                    </div>
+
+                    {!cleanView && (
+                        <div className="flex flex-wrap items-center gap-3">
+                            <button
+                                onClick={() => setVisibleProjectIds(activeProjects.map(p => p.id))}
+                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors bg-indigo-50 dark:bg-indigo-950/20 px-2.5 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-900"
+                            >
+                                <i className="fas fa-check-double mr-1"></i> Seleccionar Todos
+                            </button>
+                            <button
+                                onClick={() => setVisibleProjectIds([])}
+                                className="text-xs font-semibold text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors bg-gray-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700"
+                            >
+                                <i className="fas fa-times mr-1"></i> Limpiar Selección
+                            </button>
+                            <button
+                                onClick={() => setCleanView(true)}
+                                className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5"
+                                title="Ocultar controles para tomar captura de pantalla limpia"
+                            >
+                                <i className="fas fa-camera"></i>
+                                <span>Vista de Captura</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Filtro de proyectos */}
+                {!cleanView && (
+                    <div className="mb-6">
+                        <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                            Filtrar Proyectos en Ejecución ({activeProjects.length})
+                        </span>
+                        {activeProjects.length === 0 ? (
+                            <p className="text-xs text-gray-500 italic">No hay proyectos activos en ejecución para mostrar.</p>
+                        ) : (
+                            <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1.5 bg-gray-50 dark:bg-slate-900/40 rounded-xl border border-gray-100 dark:border-slate-850">
+                                {activeProjects.map((p, idx) => {
+                                    const isVisible = visibleProjectIds.includes(p.id);
+                                    return (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => {
+                                                if (isVisible) {
+                                                    setVisibleProjectIds(visibleProjectIds.filter(id => id !== p.id));
+                                                } else {
+                                                    setVisibleProjectIds([...visibleProjectIds, p.id]);
+                                                }
+                                            }}
+                                            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm ${getPillBg(idx, isVisible)}`}
+                                        >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isVisible ? 'bg-current animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
+                                            <span className="font-mono text-[10px] font-semibold">{p.opportunityNumber || 'S/N'}</span>
+                                            <span className="truncate max-w-[150px]">{p.name}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Gráfica Gantt */}
+                {visibleProjectIds.length === 0 ? (
+                    <div className="bg-gray-50 dark:bg-slate-900/20 border-2 border-dashed border-gray-200 dark:border-slate-800 rounded-xl p-8 text-center flex flex-col items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-950/20 flex items-center justify-center text-indigo-500 mb-3">
+                            <i className="fas fa-calendar-alt text-lg"></i>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">No hay proyectos seleccionados</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Selecciona proyectos de la lista superior para visualizar la distribución temporal de sus cronogramas.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="w-full overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-inner">
+                        <div className="min-w-[950px] relative font-sans">
+                            {/* Nivel 1: Años Fiscales */}
+                            <div className="flex border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-900 text-sm font-black text-slate-850 dark:text-slate-150">
+                                {/* Espaciador Izquierdo para la lista de proyectos */}
+                                <div className="sticky left-0 w-[340px] min-w-[340px] bg-gray-50 dark:bg-slate-900 z-30 border-r-2 border-slate-300 dark:border-slate-700 py-2.5 px-3.5 flex items-center justify-between shrink-0 select-none">
+                                    <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Proyecto</span>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">Código y Fechas</span>
+                                </div>
+                                
+                                {/* Años Fiscales Dinámicos */}
+                                <div className="flex-1 flex min-w-[630px]">
+                                    {timelineData.fyHeaders.map((header, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="py-2.5 text-center border-r-2 border-slate-300 dark:border-slate-700 last:border-r-0 tracking-wide font-black text-slate-900 dark:text-slate-100 text-[13px]"
+                                            style={{ width: `${header.width}%`, flexGrow: 0, flexShrink: 0 }}
+                                        >
+                                            <i className="far fa-clock mr-1 text-indigo-600 dark:text-indigo-400 font-bold"></i>
+                                            {header.label}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Nivel 2: Semestres H1 / H2 */}
+                            <div className="flex border-b border-gray-200 dark:border-slate-850 bg-gray-100/70 dark:bg-slate-900/90 text-[11.5px] font-black text-slate-700 dark:text-slate-350 uppercase tracking-widest">
+                                {/* Espaciador Izquierdo */}
+                                <div className="sticky left-0 w-[340px] min-w-[340px] bg-gray-100/70 dark:bg-slate-900/90 z-30 border-r-2 border-slate-300 dark:border-slate-700 shrink-0" />
+                                
+                                {/* Semestres */}
+                                <div className="flex-1 flex min-w-[630px]">
+                                    {timelineData.periods.map((period, idx) => {
+                                        const isActive = period.fy === 2025 && period.half === 'H2';
+                                        return (
+                                            <div
+                                                key={idx}
+                                                className={`py-1.5 text-center border-r-2 border-slate-300 dark:border-slate-700 last:border-r-0 font-black flex items-center justify-center gap-1.5 transition-colors ${
+                                                    isActive 
+                                                    ? 'text-indigo-750 dark:text-indigo-300 bg-indigo-100/70 dark:bg-indigo-900/40' 
+                                                    : 'text-slate-750 dark:text-slate-300'
+                                                }`}
+                                                style={{ width: `${period.width}%`, flexGrow: 0, flexShrink: 0 }}
+                                            >
+                                                <span>{period.half}</span>
+                                                {isActive && (
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-indigo-600 text-white dark:bg-indigo-500 shadow-sm border border-indigo-400/20 shrink-0">
+                                                        Foco Análisis
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Contenido / Filas */}
+                            <div className="relative min-h-[100px] flex flex-col">
+                                {/* Grilla Vertical de Fondo en todo el alto del contenedor */}
+                                <div className="absolute inset-0 flex pointer-events-none z-0">
+                                    {/* Espacio en blanco correspondiente a la columna de proyectos */}
+                                    <div className="w-[340px] min-w-[340px] border-r-2 border-slate-300 dark:border-slate-700 shrink-0 bg-transparent" />
+                                    
+                                    {/* Columnas del Timeline */}
+                                    <div className="flex-1 flex min-w-[630px] relative h-full">
+                                        {timelineData.periods.map((period, idx) => {
+                                            const isActive = period.fy === 2025 && period.half === 'H2';
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    className={`h-full border-r-2 border-slate-300 dark:border-slate-700 last:border-r-0 transition-colors ${
+                                                        isActive ? 'bg-indigo-100/45 dark:bg-indigo-900/30' : ''
+                                                    }`}
+                                                    style={{ width: `${period.width}%`, flexGrow: 0, flexShrink: 0 }}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Filas del Gantt */}
+                                <div className="relative z-10 flex flex-col divide-y divide-gray-100 dark:divide-slate-850/60 bg-transparent">
+                                    {timelineData.rows.map((row, idx) => {
+                                        const startStr = formatDate(row.start.toISOString().split('T')[0]);
+                                        const endStr = formatDate(row.end.toISOString().split('T')[0]);
+                                        const labelText = row.clientName ? `${row.clientName} - ${row.name}` : row.name;
+                                        // Calculamos dinámicamente si el nombre entra completo dentro de la barra en base a una estimación conservadora
+                                        const timelineBaseWidth = 800; // Ancho base de referencia para el timeline en píxeles
+                                        const barPixelWidth = (timelineBaseWidth * row.width) / 100;
+                                        const textPadding = 24; // Padding horizontal total (px-3 = 12px de cada lado)
+                                        const estimatedTextWidth = labelText.length * 7.2; // ~7.2px por carácter (fuente sans text-[12px] font-black)
+                                        const isTooNarrow = estimatedTextWidth > Math.max(0, barPixelWidth - textPadding);
+                                        return (
+                                            <div
+                                                key={row.id}
+                                                className="flex items-center hover:bg-gray-50/50 dark:hover:bg-slate-900/30 transition-colors group relative"
+                                            >
+                                                {/* Columna Izquierda Sticky: Info de Proyecto & Fechas */}
+                                                <div className="sticky left-0 w-[340px] min-w-[340px] bg-white dark:bg-slate-950 px-3.5 py-1.5 z-20 border-r-2 border-slate-300 dark:border-slate-700 flex flex-col justify-center gap-1 shadow-[4px_0_8px_rgba(0,0,0,0.03)] dark:shadow-[4px_0_8px_rgba(0,0,0,0.5)] shrink-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-mono bg-indigo-100 dark:bg-indigo-900/60 text-indigo-950 dark:text-indigo-100 px-2 py-0.5 rounded-md text-[10.5px] font-black border border-indigo-300 dark:border-indigo-700/60 shadow-xs shrink-0" title="Código de oportunidad">
+                                                            {row.opportunityNumber}
+                                                        </span>
+                                                        <span className="font-black text-[12.5px] text-slate-950 dark:text-white tracking-wide truncate" title={`${row.clientName ? `${row.clientName} - ` : ''}${row.name}`}>
+                                                            {row.clientName ? `${row.clientName} - ` : ''}{row.name}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-nowrap items-center gap-1 text-[10.5px] whitespace-nowrap overflow-x-hidden">
+                                                        <span className="bg-emerald-100/90 dark:bg-emerald-950/50 text-emerald-950 dark:text-emerald-250 px-1.5 py-0.5 rounded-md font-black border border-emerald-300/80 dark:border-emerald-800/60 shadow-xs">
+                                                            Ini: {startStr}
+                                                        </span>
+                                                        <span className="bg-amber-100/90 dark:bg-amber-950/50 text-amber-950 dark:text-amber-250 px-1.5 py-0.5 rounded-md font-black border border-amber-300/80 dark:border-amber-800/60 shadow-xs" title="Fecha fin planificada (Teórica)">
+                                                            Plan: {row.theo ? formatDate(row.theo.toISOString().split('T')[0]) : 'S/D'}
+                                                        </span>
+                                                        <span className="bg-sky-100/90 dark:bg-sky-950/50 text-sky-950 dark:text-sky-250 px-1.5 py-0.5 rounded-md font-black border border-sky-300/80 dark:border-sky-800/60 shadow-xs" title="Fecha fin real">
+                                                            Real: {row.realEndDate ? formatDate(row.realEndDate) : 'En curso'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Columna Derecha: Contenedor de la Barra del Timeline */}
+                                                <div className="flex-1 min-w-[630px] relative h-11 flex items-center px-4 z-10">
+                                                    {/* Barra de Proyecto */}
+                                                    <div
+                                                        className={`absolute h-8 rounded-lg bg-gradient-to-r ${getBarGradient(idx)} text-white flex items-center justify-center px-3 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 select-none cursor-pointer z-10`}
+                                                        style={{ left: `${row.left}%`, width: `${row.width}%` }}
+                                                        title={`${row.clientName ? `${row.clientName} - ` : ''}${row.name} (${row.opportunityNumber})\nInicio: ${startStr}\nFin: ${row.realEndDate ? formatDate(row.realEndDate) : 'En curso'}${row.theo ? `\nPlanificado: ${formatDate(row.theo.toISOString().split('T')[0])}` : ''}`}
+                                                    >
+                                                        {!isTooNarrow ? (
+                                                            <span className="text-[12px] font-black truncate tracking-wide px-1 drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.85)]">
+                                                                {labelText}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2.5 whitespace-nowrap text-[11.5px] font-black text-slate-950 dark:text-white pointer-events-none z-20 bg-white/98 dark:bg-slate-900/98 px-2.5 py-1 rounded-md shadow-[0_3px_10px_rgba(0,0,0,0.16)] dark:shadow-[0_3px_10px_rgba(0,0,0,0.6)] border border-slate-350 dark:border-slate-600 backdrop-blur-xs tracking-wide">
+                                                                {labelText}
+                                                            </span>
+                                                        )}
+                                                        
+                                                        {/* Línea vertical para Fecha Planificada (Teórica) - Restringida exactamente dentro de la barra */}
+                                                        {row.relativeTheoLeft !== null && (
+                                                            <div
+                                                                className="absolute top-0 bottom-0 w-0 border-l border-dashed border-white/70 z-15 pointer-events-none"
+                                                                style={{ left: `${row.relativeTheoLeft}%` }}
+                                                            >
+                                                                {/* Hito visual: Diamante amarillo en el centro de la barra */}
+                                                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-yellow-300 rotate-45 border border-white" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             <div className="bg-indigo-50 dark:bg-slate-800 p-6 rounded-xl border border-indigo-100 dark:border-slate-700 mb-8">
                 <h3 className="text-lg font-bold mb-4 text-indigo-900 dark:text-indigo-200">Gestión de Datos</h3>

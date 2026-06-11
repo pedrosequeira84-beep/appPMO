@@ -6,6 +6,7 @@ import Modal from '../components/Modal';
 import { generateUUID, formatDate } from '../utils/helpers';
 import { COST_CATEGORIES, Project } from '../types';
 import { supabase } from '../utils/supabase';
+import { exportCostsToExcel } from '../utils/excelExport';
 
 export const CostsView: React.FC = () => {
     const { projects, expenses, setExpenses, setProjects, showToast, user, currentUserMember, capacityData } = useApp();
@@ -271,7 +272,8 @@ export const CostsView: React.FC = () => {
             'En ejecución': 0,
             'Soporte': 1,
             'Intervención temprana': 2,
-            'Finalizado': 3
+            'Finalizado': 3,
+            'POC': 4,
         };
 
         return projects
@@ -287,10 +289,12 @@ export const CostsView: React.FC = () => {
 
                 if (orderA !== orderB) return orderA - orderB;
 
-                if (a.status === 'En ejecución') {
-                    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-                }
+                // Secondary sort: alphabetically by client name
+                const clientA = (a.clientName || '').toLowerCase();
+                const clientB = (b.clientName || '').toLowerCase();
+                if (clientA !== clientB) return clientA.localeCompare(clientB);
 
+                // Tertiary sort: alphabetically by project name
                 return a.name.localeCompare(b.name);
             });
     }, [projects, searchTerm]);
@@ -365,8 +369,12 @@ export const CostsView: React.FC = () => {
                         Informe de Costos
                     </button>
                     <button onClick={() => sapFileRef.current?.click()} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-all shadow-md shadow-emerald-500/20">
-                        <i className="fas fa-file-excel"></i>
+                        <i className="fas fa-file-import"></i>
                         Importar desde SAP
+                    </button>
+                    <button onClick={() => exportCostsToExcel(filteredProjects, expenses)} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm transition-all shadow-md shadow-emerald-700/20">
+                        <i className="fas fa-file-excel"></i>
+                        Exportar Excel
                     </button>
                 </div>
                 <div className="flex-1 max-w-md w-full relative">

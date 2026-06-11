@@ -8,12 +8,26 @@ import { ProjectReport } from '../components/ProjectReport';
 import SearchableSelect from '../components/SearchableSelect';
 import * as XLSX from 'xlsx';
 
+const CLIENT_COLORS = [
+  'bg-blue-100 dark:bg-blue-900/40',
+  'bg-emerald-100 dark:bg-emerald-900/40',
+  'bg-purple-100 dark:bg-purple-900/40',
+  'bg-rose-100 dark:bg-rose-900/40',
+  'bg-amber-100 dark:bg-amber-900/40',
+  'bg-cyan-100 dark:bg-cyan-900/40',
+  'bg-fuchsia-100 dark:bg-fuchsia-900/40',
+  'bg-lime-100 dark:bg-lime-900/40',
+  'bg-orange-100 dark:bg-orange-900/40',
+  'bg-indigo-100 dark:bg-indigo-900/40',
+];
+
+// Hash function removed to prevent collisions, we will assign colors by index of sorted clients
 
 
 export const ProjectsView: React.FC = () => {
   const {
     projects, setProjects, changes, showToast, user, risks, lessons,
-    expenses, executiveFilters, setExecutiveFilters, capacityData, team
+    expenses, executiveFilters, setExecutiveFilters, capacityData, team, setCurrentView
   } = useApp();
 
   const renderTextWithLinks = (text: string) => {
@@ -442,7 +456,8 @@ export const ProjectsView: React.FC = () => {
       'En ejecución': 0,
       'Soporte': 1,
       'Intervención temprana': 2,
-      'Finalizado': 3
+      'Finalizado': 3,
+      'POC': 4
     };
 
     return (projects || [])
@@ -491,16 +506,58 @@ export const ProjectsView: React.FC = () => {
 
         if (orderA !== orderB) return orderA - orderB;
 
-        // Secondary sort for 'En ejecución': Newest first
-        if (a.status === 'En ejecución') {
-          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return dateB - dateA;
-        }
+        // Secondary sort by client name
+        const clientA = (a.clientName || '').toLowerCase();
+        const clientB = (b.clientName || '').toLowerCase();
+        if (clientA !== clientB) return clientA.localeCompare(clientB);
 
-        return 0;
+        // Tertiary sort by createdAt (Newest first)
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
       });
   }, [projects, searchTerm, executiveFilters]);
+
+  const expiringSupportProjects = React.useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const twoMonthsFromNow = new Date(today);
+    twoMonthsFromNow.setDate(today.getDate() + 60);
+
+    return projects.filter(p => {
+      if (p.status !== 'Soporte') return false;
+      const targetDate = p.realEndDate || p.theoreticalEndDate;
+      if (!targetDate) return false;
+      
+      const endDate = new Date(targetDate + 'T00:00:00');
+      return endDate <= twoMonthsFromNow;
+    });
+  }, [projects]);
+
+  const clientColorMap = React.useMemo(() => {
+    const clients = Array.from(new Set(projects.map(p => (p.clientName || '').trim().toLowerCase()))).filter(Boolean).sort() as string[];
+    const map = new Map<string, string>();
+    clients.forEach((client, index) => {
+      map.set(client, CLIENT_COLORS[index % CLIENT_COLORS.length]);
+    });
+    return map;
+  }, [projects]);
+
+  const getClientBgClass = (clientName: string | undefined) => {
+    if (!clientName) return 'bg-white dark:bg-slate-800';
+    return clientColorMap.get(clientName.trim().toLowerCase()) || 'bg-white dark:bg-slate-800';
+  };
+
+  const isExpiringSupport = (p: Project) => expiringSupportProjects.some(exp => exp.id === p.id);
+  const isAlreadyExpiredSupport = (p: Project) => {
+    if (!isExpiringSupport(p)) return false;
+    const targetDate = p.realEndDate || p.theoreticalEndDate;
+    if (!targetDate) return false;
+    const endDate = new Date(targetDate + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return endDate < today;
+  };
 
   const uniqueClients = React.useMemo(() => Array.from(new Set(projects.map(p => p.clientName))).filter(Boolean), [projects]);
   const uniquePMs = React.useMemo(() => Array.from(new Set(projects.map(p => p.pm))).filter(Boolean), [projects]);
@@ -560,6 +617,14 @@ export const ProjectsView: React.FC = () => {
     }
   };
 
+  const handleTimelineReportRedirect = () => {
+    localStorage.setItem('changes_view_mode', 'timeline');
+    if (selectedProjectIds.length > 0) {
+      localStorage.setItem('changes_selected_project_ids', JSON.stringify(selectedProjectIds));
+    }
+    setCurrentView('cambios');
+  };
+
   return (
     <div className="fade-in">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -607,12 +672,53 @@ export const ProjectsView: React.FC = () => {
         </div>
       )}
 
+      {expiringSupportProjects.length > 0 && (
+        <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/30 border-l-4 border-amber-500 rounded-r-xl shadow-sm flex items-start gap-3">
+          <i className="fas fa-exclamation-triangle text-amber-500 mt-1"></i>
+          <div>
+            <h3 className="font-bold text-amber-800 dark:text-amber-400">Atención: Proyectos de Soporte por vencer o vencidos</h3>
+            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+              Hay {expiringSupportProjects.length} proyecto{expiringSupportProjects.length > 1 ? 's' : ''} de Soporte que requiere{expiringSupportProjects.length > 1 ? 'n' : ''} atención:
+            </p>
+            <ul className="list-disc list-inside mt-2 text-sm text-amber-700 dark:text-amber-300 font-medium space-y-1">
+              {expiringSupportProjects.map(p => {
+                const targetDate = p.realEndDate || p.theoreticalEndDate;
+                const endDate = new Date(targetDate + 'T00:00:00');
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isExpired = endDate < today;
+                
+                return (
+                  <li key={p.id} className="flex items-center gap-2">
+                    <i className="fas fa-circle text-[6px] mr-1"></i>
+                    <span 
+                      className="font-bold cursor-pointer hover:underline text-indigo-700 dark:text-indigo-400"
+                      onClick={() => handleEdit(p)}
+                      title="Click para ver/editar detalles del proyecto"
+                    >
+                      {p.name}
+                    </span> 
+                    <span className="opacity-75 text-xs">
+                      {isExpired ? `(Venció el ${formatDate(targetDate)})` : `(Vence el ${formatDate(targetDate)})`}
+                    </span>
+                    {isExpired && <span className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded text-[10px] font-black uppercase">Ya vencido</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <button onClick={handleNew} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg transition-transform transform hover:scale-105 flex items-center justify-center font-medium">
           <i className="fas fa-plus mr-2"></i> Crear Nuevo Proyecto
         </button>
         <button onClick={handleExportExcel} className="bg-white hover:bg-gray-50 text-emerald-600 border border-emerald-200 px-6 py-3 rounded-xl shadow-sm transition-transform transform hover:scale-105 flex items-center justify-center font-medium">
           <i className="fas fa-file-excel mr-2"></i> Exportar a Excel
+        </button>
+        <button onClick={handleTimelineReportRedirect} className="bg-white hover:bg-gray-50 text-indigo-600 border border-indigo-200 px-6 py-3 rounded-xl shadow-sm transition-transform transform hover:scale-105 flex items-center justify-center font-medium">
+          <i className="fas fa-clock-rotate-left mr-2"></i> Reporte de Desvíos {selectedProjectIds.length > 0 ? `(${selectedProjectIds.length})` : ''}
         </button>
         {selectedProjectIds.length > 0 && (
           <button
@@ -650,7 +756,7 @@ export const ProjectsView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                 {filteredProjects.map(p => (
-                  <tr key={p.id} className={`hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors ${selectedProjectIds.includes(p.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}>
+                  <tr key={p.id} className={`hover:brightness-95 transition-colors ${selectedProjectIds.includes(p.id) ? 'bg-indigo-100 dark:bg-indigo-900/30' : getClientBgClass(p.clientName)}`}>
                     <td className="p-4">
                       <input
                         type="checkbox"
@@ -679,6 +785,11 @@ export const ProjectsView: React.FC = () => {
                           {p.priority && p.status !== 'Finalizado' && (
                             <span className="mr-2 inline-flex items-center justify-center w-6 h-6 rounded bg-indigo-50 text-indigo-600 text-[10px] font-black border border-indigo-100" title="Prioridad">
                               P{p.priority}
+                            </span>
+                          )}
+                          {isExpiringSupport(p) && (
+                            <span className={`mr-2 inline-flex items-center justify-center px-2 h-6 rounded-full text-[10px] font-black border ${isAlreadyExpiredSupport(p) ? 'bg-red-100 text-red-700 border-red-300' : 'bg-orange-100 text-orange-700 border-orange-200'}`} title={isAlreadyExpiredSupport(p) ? "Contrato vencido" : "Requiere renovación pronto"}>
+                              <i className="fas fa-exclamation-triangle mr-1"></i> {isAlreadyExpiredSupport(p) ? 'Ya Vencido' : 'Vence Pronto'}
                             </span>
                           )}
                           {p.name}
@@ -746,7 +857,7 @@ export const ProjectsView: React.FC = () => {
         </div>
       ) : (
         <div className="flex gap-6 overflow-x-auto pb-6">
-          {['Intervención temprana', 'POC', 'En ejecución', 'Soporte', 'Finalizado'].map(status => {
+          {['En ejecución', 'Soporte', 'Intervención temprana', 'Finalizado', 'POC'].map(status => {
             const colProjects = filteredProjects.filter(p => (p.status || 'En ejecución') === status);
             const borderColor = status === 'En ejecución' ? 'border-green-500' : status === 'Soporte' ? 'border-yellow-500' : status === 'Intervención temprana' ? 'border-blue-500' : status === 'POC' ? 'border-purple-500' : 'border-gray-400';
 
@@ -758,7 +869,7 @@ export const ProjectsView: React.FC = () => {
                 </h3>
                 <div className="space-y-3 flex-1 overflow-y-auto max-h-[70vh] scrollbar-thin px-1">
                   {colProjects.map(p => (
-                    <div key={p.id} className={`bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border-l-4 ${borderColor} cursor-pointer hover:shadow-md transition-all relative group transform hover:-translate-y-1`}>
+                    <div key={p.id} className={`${getClientBgClass(p.clientName)} p-4 rounded-lg shadow-sm border-l-4 ${borderColor} cursor-pointer hover:shadow-md transition-all relative group transform hover:-translate-y-1`}>
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           {(() => {
@@ -776,6 +887,11 @@ export const ProjectsView: React.FC = () => {
                             {p.priority && p.status !== 'Finalizado' && (
                               <span className="mr-2 inline-flex items-center justify-center w-5 h-5 rounded bg-indigo-50 text-indigo-600 text-[9px] font-black border border-indigo-100 shrink-0" title={`Prioridad ${p.priority}`}>
                                 P{p.priority}
+                              </span>
+                            )}
+                            {isExpiringSupport(p) && (
+                              <span className={`mr-2 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-black border shrink-0 ${isAlreadyExpiredSupport(p) ? 'bg-red-100 text-red-700 border-red-300' : 'bg-orange-100 text-orange-700 border-orange-200'}`} title={isAlreadyExpiredSupport(p) ? "Contrato vencido" : "Requiere renovación"}>
+                                <i className="fas fa-exclamation-triangle"></i>
                               </span>
                             )}
                             {p.name}
