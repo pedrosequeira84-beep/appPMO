@@ -29,3 +29,6 @@ dist-ssr
 
 # Backups and archives
 *.zip
+
+# Scripts locales / datos exportados (contienen credenciales sensibles)
+scratch/

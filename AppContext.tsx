@@ -249,6 +249,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Team Members
         const { data: teamData } = await supabase.from('team_members').select('*');
         if (teamData) {
+          // If Lucas Le Favi was previously renamed to include "368" in the database,
+          // restore it to "Lucas Le Favi" to prevent split(' ')[0] issues in charts.
+          const lucasWith368 = teamData.find((t: DBTeamMember) => 
+            t.name.toLowerCase().includes('lucas le favi') && t.name.includes('368')
+          );
+          if (lucasWith368) {
+            const restoredName = lucasWith368.name.replace(/^368\s*-\s*/i, '');
+            supabase
+              .from('team_members')
+              .update({ name: restoredName })
+              .eq('id', lucasWith368.id)
+              .then(({ error }) => {
+                if (error) {
+                  console.error("Error restoring Lucas Le Favi name:", error);
+                } else {
+                  console.log("Restored Lucas Le Favi name successfully to:", restoredName);
+                  refreshData();
+                }
+              });
+          }
+
           setTeam(teamData.map((t: DBTeamMember) => ({
             id: t.id,
             name: t.name,
@@ -329,8 +350,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .from('capacity_assignments')
           .select('*')
           .order('date', { ascending: false })
-          .or(`date.gte.${startDate},week_start.gte.${startDate}`)
-          .or(`date.lte.${endDate},week_start.lte.${endDate}`);
+          .gte('date', startDate)
+          .lte('date', endDate);
 
         const { data, error } = await query;
         if (error) throw error;

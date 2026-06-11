@@ -22,10 +22,16 @@ const MEMBER_ID_MAP: Record<string, string> = {
     'JARAGUIONIS': '341',
     'VILLEGAS': '342',
     'OJEDA': '343',
-    'Araujo': '361'
+    'Araujo': '361',
+    'Le Favi': '368'
 };
 
-const ARG_HOLIDAYS_2026 = [
+const ARG_HOLIDAYS = [
+    // 2025
+    '2025-01-01', '2025-03-03', '2025-03-04', '2025-03-24', '2025-04-02', '2025-04-18',
+    '2025-05-01', '2025-05-25', '2025-06-16', '2025-06-20', '2025-07-09', '2025-08-17',
+    '2025-10-12', '2025-11-20', '2025-12-08', '2025-12-25',
+    // 2026
     '2026-01-01', '2026-02-16', '2026-02-17', '2026-03-24', '2026-04-02', '2026-04-03',
     '2026-05-01', '2026-05-25', '2026-06-15', '2026-06-20', '2026-07-09', '2026-08-17',
     '2026-10-12', '2026-11-20', '2026-11-23', '2026-12-08', '2026-12-25'
@@ -57,11 +63,127 @@ export const CapacityView: React.FC = () => {
     const [inlineCell, setInlineCell] = useState<{ memberId: string, date: string, activityKey: string, assignmentId?: string } | null>(null);
     const [inlineHours, setInlineHours] = useState('');
 
+    const [activeTab, setActiveTab] = useState<'grid' | 'project'>('grid');
+    const [selectedQueryProjectId, setSelectedQueryProjectId] = useState<string>('');
+
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
-
+    const dayISOs = useMemo(
+        () => days.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`),
+        [days]
+    );
     const monthName = currentDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+
+    // Historial completo de asignaciones para el proyecto seleccionado (sin filtrar por mes)
+    const [projectAssignments, setProjectAssignments] = useState<CapacityAssignment[]>([]);
+    const [isLoadingProjectDetail, setIsLoadingProjectDetail] = useState(false);
+
+    const loadProjectAssignments = async (projectId: string) => {
+        if (!projectId) {
+            setProjectAssignments([]);
+            return;
+        }
+        setIsLoadingProjectDetail(true);
+        try {
+            const { data, error } = await supabase
+                .from('capacity_assignments')
+                .select('*')
+                .eq('project_id', projectId)
+                .order('date', { ascending: false });
+
+            if (error) throw error;
+
+            const mapped: CapacityAssignment[] = (data || []).map((a: any) => {
+                const rawObs = a.observations || '';
+                const isExtra = rawObs.startsWith('[IS_EXTRA] ');
+                return {
+                    id: a.id,
+                    memberId: a.member_id,
+                    type: a.type,
+                    projectId: a.project_id,
+                    date: a.date,
+                    hours: a.hours,
+                    observations: isExtra ? rawObs.replace('[IS_EXTRA] ', '') : rawObs,
+                    isExtra
+                };
+            });
+            setProjectAssignments(mapped);
+        } catch (err: any) {
+            console.error('Error loading project assignments:', err);
+            showToast('Error al cargar detalle del proyecto: ' + err.message, 'error');
+        } finally {
+            setIsLoadingProjectDetail(false);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedQueryProjectId) {
+            loadProjectAssignments(selectedQueryProjectId);
+        } else {
+            setProjectAssignments([]);
+        }
+    }, [selectedQueryProjectId]);
+
+    // Estadísticas del proyecto en el mes (Horas totales, extras, recursos únicos)
+    const projectStats = useMemo(() => {
+        const pmRoles = ['PM', 'Project Manager', 'Gerente'];
+        let totalHours = 0;
+        let totalExtra = 0;
+        let pmHours = 0;
+        let engHours = 0;
+        const uniqueMembers = new Set<string>();
+
+        projectAssignments.forEach(a => {
+            const hrs = Number(a.hours) || 0;
+            totalHours += hrs;
+            if (a.isExtra) {
+                totalExtra += hrs;
+            }
+            uniqueMembers.add(a.memberId);
+
+            const member = team.find(t => t.id === a.memberId);
+            const isPM = member ? pmRoles.includes(member.role || '') : false;
+            if (isPM) {
+                pmHours += hrs;
+            } else {
+                engHours += hrs;
+            }
+        });
+
+        return {
+            totalHours,
+            totalExtra,
+            pmHours,
+            engHours,
+            collaboratorCount: uniqueMembers.size
+        };
+    }, [projectAssignments, team]);
+
+    // Datos del gráfico: Horas imputadas por colaborador
+    const projectCollaboratorHoursData = useMemo(() => {
+        const counts: Record<string, { regular: number, extra: number, total: number }> = {};
+        projectAssignments.forEach(a => {
+            const member = team.find(t => t.id === a.memberId);
+            const displayName = member ? getMemberDisplayName(member.name) : 'Desconocido';
+            if (!counts[displayName]) counts[displayName] = { regular: 0, extra: 0, total: 0 };
+            if (a.isExtra) {
+                counts[displayName].extra += Number(a.hours);
+            } else {
+                counts[displayName].regular += Number(a.hours);
+            }
+            counts[displayName].total += Number(a.hours);
+        });
+        return Object.entries(counts)
+            .map(([name, val]) => ({
+                name: name.length > 20 ? name.substring(0, 20) + '...' : name,
+                fullName: name,
+                regular: val.regular,
+                extra: val.extra,
+                total: val.total
+            }))
+            .sort((a, b) => b.total - a.total);
+    }, [projectAssignments, team]);
 
     // Auto-fetch data when month changes
     useEffect(() => {
@@ -204,15 +326,26 @@ export const CapacityView: React.FC = () => {
         const cell = c || selectedCell;
         if (!cell || isSaving) return;
 
-        const hours = parseFloat(h || assignHours);
+        const isInline = h !== undefined;
+        const hoursStr = isInline ? h : assignHours;
+
+        if (isInline && (hoursStr === '' || hoursStr.trim() === '')) {
+            setInlineCell(null);
+            return;
+        }
+
+        const hours = parseFloat(hoursStr);
         const existing = cell.assignmentId ? capacityData.assignments.find(a => a.id === cell.assignmentId) : null;
-        const obs = h ? (existing?.observations || '') : assignObs;
-        const type = h ? (cell.activityKey?.startsWith('project-') ? 'project' : cell.activityKey?.replace('type-', '')) : assignType;
-        const projectId = h ? (cell.activityKey?.startsWith('project-') ? cell.activityKey.replace('project-', '') : null) : (type === 'project' ? assignProject : null);
-        const isExtraVal = h ? (existing?.isExtra || false) : assignIsExtra;
+        const obs = isInline ? (existing?.observations || '') : assignObs;
+        const type = isInline ? (cell.activityKey?.startsWith('project-') ? 'project' : cell.activityKey?.replace('type-', '')) : assignType;
+        const projectId = isInline ? (cell.activityKey?.startsWith('project-') ? cell.activityKey.replace('project-', '') : null) : (type === 'project' ? assignProject : null);
+        const isExtraVal = isInline ? (existing?.isExtra || false) : assignIsExtra;
         const finalObs = isExtraVal ? `[IS_EXTRA] ${obs}` : obs;
 
-        if (isNaN(hours) || hours < 0) return showToast('Horas inválidas', 'error');
+        if (isNaN(hours) || hours < 0) {
+            if (isInline) setInlineCell(null);
+            return showToast('Horas inválidas', 'error');
+        }
 
         setIsSaving(true);
         try {
@@ -230,7 +363,7 @@ export const CapacityView: React.FC = () => {
                         d.setDate(baseDate.getDate() + (i - dayOfWeek));
                         if (d.getMonth() === baseDate.getMonth()) {
                             const iso = d.toISOString().split('T')[0];
-                            if (!ARG_HOLIDAYS_2026.includes(iso)) datesToSave.push(iso);
+                            if (!ARG_HOLIDAYS.includes(iso)) datesToSave.push(iso);
                         }
                     }
                 } else if (replicateOption === 'month') {
@@ -239,7 +372,7 @@ export const CapacityView: React.FC = () => {
                         const d = new Date(year, month, day);
                         const dw = d.getDay();
                         const iso = d.toISOString().split('T')[0];
-                        if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS_2026.includes(iso)) {
+                        if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS.includes(iso)) {
                             datesToSave.push(iso);
                         }
                     }
@@ -250,7 +383,7 @@ export const CapacityView: React.FC = () => {
                         const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), day);
                         if (d.getMonth() === baseDate.getMonth()) {
                             const iso = d.toISOString().split('T')[0];
-                            if (!ARG_HOLIDAYS_2026.includes(iso)) {
+                            if (!ARG_HOLIDAYS.includes(iso)) {
                                 datesToSave.push(iso);
                             }
                         }
@@ -319,6 +452,9 @@ export const CapacityView: React.FC = () => {
                 showToast(results.length > 1 ? `✅ ${results.length} registros guardados` : 'Registro guardado', 'success');
                 handleCloseModal();
                 setReplicateOption('none');
+                if (selectedQueryProjectId) {
+                    loadProjectAssignments(selectedQueryProjectId);
+                }
             } else {
                 throw new Error('No se pudo confirmar el guardado en la base de datos');
             }
@@ -365,7 +501,7 @@ export const CapacityView: React.FC = () => {
                 const iso = newDate.toISOString().split('T')[0];
                 const dw = newDate.getDay();
 
-                if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS_2026.includes(iso)) {
+                if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS.includes(iso)) {
                     // Evitar duplicados exactos
                     const exists = capacityData.assignments.some(curr => 
                         curr.memberId === memberId && curr.date === iso && curr.projectId === a.project_id && curr.type === a.type
@@ -416,6 +552,9 @@ export const CapacityView: React.FC = () => {
             }));
 
             showToast(`✅ ${mapped.length} registros copiados con éxito`, 'success');
+            if (selectedQueryProjectId) {
+                loadProjectAssignments(selectedQueryProjectId);
+            }
         } catch (err: any) {
             showToast('Error al copiar: ' + err.message, 'error');
         } finally {
@@ -436,6 +575,9 @@ export const CapacityView: React.FC = () => {
             }));
             handleCloseModal();
             showToast('Registro eliminado', 'info');
+            if (selectedQueryProjectId) {
+                loadProjectAssignments(selectedQueryProjectId);
+            }
         } catch (err: any) {
             showToast('Error: ' + err.message, 'error');
         }
@@ -472,6 +614,9 @@ export const CapacityView: React.FC = () => {
                 assignments: prev.assignments.filter(a => !ids.includes(a.id))
             }));
             showToast('Fila eliminada', 'info');
+            if (selectedQueryProjectId) {
+                loadProjectAssignments(selectedQueryProjectId);
+            }
         } catch (err: any) {
             showToast('Error: ' + err.message, 'error');
         }
@@ -543,41 +688,37 @@ export const CapacityView: React.FC = () => {
     };
 
     const workingDaysCount = useMemo(() => {
-        return days.filter(d => {
+        return days.filter((d, idx) => {
             const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            const isHoliday = ARG_HOLIDAYS_2026.includes(iso);
-            return !isWeekend && !isHoliday;
+            return !isWeekend && !ARG_HOLIDAYS.includes(dayISOs[idx]);
         }).length;
-    }, [days]);
+    }, [days, dayISOs]);
 
     const totalMonthHours = useMemo(() => {
         let total = 0;
         team.forEach(m => {
             const mActivities = groupedData[m.id] || {};
             Object.keys(mActivities).forEach(key => {
-                days.forEach(d => {
-                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                dayISOs.forEach(iso => {
                     total += (mActivities[key][iso] || []).filter(a => !a.isExtra).reduce((s, a) => s + a.hours, 0);
                 });
             });
         });
         return total;
-    }, [groupedData, team, days]);
+    }, [groupedData, team, dayISOs]);
 
     const totalExtraMonthHours = useMemo(() => {
         let total = 0;
         team.forEach(m => {
             const mActivities = groupedData[m.id] || {};
             Object.keys(mActivities).forEach(key => {
-                days.forEach(d => {
-                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                dayISOs.forEach(iso => {
                     total += (mActivities[key][iso] || []).filter(a => a.isExtra).reduce((s, a) => s + a.hours, 0);
                 });
             });
         });
         return total;
-    }, [groupedData, team, days]);
+    }, [groupedData, team, dayISOs]);
 
     const theoreticalCapacity = workingDaysCount * team.length * 8;
     const occupancyRate = theoreticalCapacity > 0 ? (totalMonthHours / theoreticalCapacity) * 100 : 0;
@@ -610,8 +751,7 @@ export const CapacityView: React.FC = () => {
             let extra = 0;
             const mActivities = groupedData[m.id] || {};
             Object.keys(mActivities).forEach(key => {
-                days.forEach(d => {
-                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                dayISOs.forEach(iso => {
                     const assigns = mActivities[key][iso] || [];
                     regular += assigns.filter(a => !a.isExtra).reduce((s, a) => s + a.hours, 0);
                     extra += assigns.filter(a => a.isExtra).reduce((s, a) => s + a.hours, 0);
@@ -621,7 +761,19 @@ export const CapacityView: React.FC = () => {
         })
         .sort((a, b) => b.total - a.total)
         .slice(0, 6);
-    }, [team, groupedData, days]);
+    }, [team, groupedData, dayISOs]);
+
+    const dailyTeamTotals = useMemo(() => {
+        const result: Record<string, number> = {};
+        dayISOs.forEach(iso => {
+            result[iso] = team.reduce((sum, m) => {
+                const acts = groupedData[m.id] || {};
+                return sum + Object.values(acts).reduce((s, dateMap) =>
+                    s + (dateMap[iso] || []).filter(a => !a.isExtra).reduce((h, a) => h + a.hours, 0), 0);
+            }, 0);
+        });
+        return result;
+    }, [groupedData, dayISOs, team]);
 
     return (
         <div className="fade-in max-w-[100vw] flex flex-col p-2 pb-20 relative">
@@ -647,7 +799,25 @@ export const CapacityView: React.FC = () => {
                 </div>
             </div>
 
-            {/* KPI Summary Cards */}
+            {/* Tab Selector */}
+            <div className="flex gap-2 mb-6 bg-gray-100/50 dark:bg-slate-900/50 p-1.5 rounded-2xl w-fit border border-gray-200/50 dark:border-slate-800 shrink-0">
+                <button 
+                    onClick={() => setActiveTab('grid')} 
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'grid' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                >
+                    <i className="fas fa-th"></i> Vista General (Grilla)
+                </button>
+                <button 
+                    onClick={() => setActiveTab('project')} 
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'project' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                >
+                    <i className="fas fa-briefcase"></i> Detalle por Proyecto
+                </button>
+            </div>
+
+            {activeTab === 'grid' && (
+                <>
+                    {/* KPI Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white dark:bg-dark-card p-5 rounded-3xl shadow-sm border border-gray-100 dark:border-dark-border flex items-center gap-4 hover:shadow-md transition-shadow">
                     <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl shadow-inner">
@@ -707,10 +877,10 @@ export const CapacityView: React.FC = () => {
                                 <th className="sticky top-0 z-30 border-b dark:border-slate-700 w-[70px] p-2 text-center text-[10px] font-black uppercase text-gray-400 tracking-widest bg-gray-50/50 dark:bg-slate-900/50">
                                     TOTAL
                                 </th>
-                                {days.map(d => {
+                                {days.map((d, idx) => {
                                     const { day, name } = formatDateShort(d);
                                     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                    const iso = dayISOs[idx];
                                     return (
                                         <th key={iso} className={`sticky top-0 z-30 border-b dark:border-slate-700 w-[50px] p-3 text-center ${isWeekend ? 'bg-gray-100/50 dark:bg-slate-900/50' : 'bg-white dark:bg-dark-card'}`}>
                                             <div className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">{name}</div>
@@ -729,8 +899,7 @@ export const CapacityView: React.FC = () => {
                                 let memberRegularTotal = 0;
                                 let memberExtraTotal = 0;
 
-                                days.forEach(d => {
-                                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                dayISOs.forEach(iso => {
                                     let regSum = 0;
                                     let extSum = 0;
                                     activityKeys.forEach(key => {
@@ -769,12 +938,12 @@ export const CapacityView: React.FC = () => {
                                                 {memberRegularTotal > 0 ? memberRegularTotal.toFixed(1) : '-'}
                                                 {memberExtraTotal > 0 && <span className="text-[10px] text-amber-500 block leading-none pb-1">+{memberExtraTotal.toFixed(1)}</span>}
                                             </td>
-                                            {days.map(d => {
-                                                const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                            {days.map((d, idx) => {
+                                                const iso = dayISOs[idx];
                                                 const regTotal = dayRegularTotals[iso];
                                                 const extTotal = dayExtraTotals[iso];
                                                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                                                const isHoliday = ARG_HOLIDAYS_2026.includes(iso);
+                                                const isHoliday = ARG_HOLIDAYS.includes(iso);
                                                 const isDisabled = isWeekend || isHoliday;
                                                 return (
                                                     <td key={iso}
@@ -833,13 +1002,13 @@ export const CapacityView: React.FC = () => {
                                                         {activityTotal > 0 ? activityTotal.toFixed(1) : '-'}
                                                         {activityExtraTotal > 0 && <span className="text-[9px] text-amber-500 block pb-1">+{activityExtraTotal.toFixed(1)}</span>}
                                                     </td>
-                                                    {days.map(d => {
-                                                        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                                    {days.map((d, idx) => {
+                                                        const iso = dayISOs[idx];
                                                         const dAssigns = memberActivities[key][iso] || [];
                                                         const regSum = dAssigns.filter(a => !a.isExtra).reduce((s, a) => s + a.hours, 0);
                                                         const extSum = dAssigns.filter(a => a.isExtra).reduce((s, a) => s + a.hours, 0);
                                                         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                                                        const isHoliday = ARG_HOLIDAYS_2026.includes(iso);
+                                                        const isHoliday = ARG_HOLIDAYS.includes(iso);
                                                         const isDisabled = isWeekend || isHoliday;
 
                                                         return (
@@ -891,30 +1060,13 @@ export const CapacityView: React.FC = () => {
                                     TOTAL EQUIPO DIARIO
                                 </td>
                                 <td className="text-center font-black text-sm text-indigo-600 dark:text-indigo-400 border-r dark:border-slate-700">
-                                    {team.reduce((sum, m) => {
-                                        let mTotal = 0;
-                                        days.forEach(d => {
-                                            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                                            const mActivities = groupedData[m.id] || {};
-                                            Object.keys(mActivities).forEach(key => {
-                                                mTotal += (mActivities[key][iso] || []).filter(a => !a.isExtra).reduce((s, a) => s + a.hours, 0);
-                                            });
-                                        });
-                                        return sum + mTotal;
-                                    }, 0).toFixed(1)}
+                                    {totalMonthHours.toFixed(1)}
                                 </td>
-                                {days.map(d => {
-                                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                                    let dailySum = 0;
-                                    team.forEach(m => {
-                                        const mActivities = groupedData[m.id] || {};
-                                        Object.keys(mActivities).forEach(key => {
-                                            dailySum += (mActivities[key][iso] || []).filter(a => !a.isExtra).reduce((s, a) => s + a.hours, 0);
-                                        });
-                                    });
+                                {days.map((d, idx) => {
+                                    const iso = dayISOs[idx];
+                                    const dailySum = dailyTeamTotals[iso] || 0;
                                     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                                    const isHoliday = ARG_HOLIDAYS_2026.includes(iso);
-                                    const isDisabled = isWeekend || isHoliday;
+                                    const isDisabled = isWeekend || ARG_HOLIDAYS.includes(iso);
                                     return (
                                         <td key={iso} className={`text-center font-black text-[11px] text-gray-700 dark:text-gray-300 border-l dark:border-slate-800 ${isDisabled ? 'bg-gray-100/30 dark:bg-slate-800/20' : ''}`}>
                                             {dailySum > 0 ? dailySum.toFixed(1) : '-'}
@@ -1055,6 +1207,206 @@ export const CapacityView: React.FC = () => {
                     </div>
                 </div>
             </div>
+                </>
+            )}
+
+            {activeTab === 'project' && (
+                <div className="flex flex-col gap-6">
+                    {/* Project Selector Panel */}
+                    <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm flex flex-col md:flex-row md:items-center gap-4">
+                        <div className="flex-1">
+                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Proyecto para Consultar</label>
+                            <SearchableSelect
+                                options={projects.map(p => ({ 
+                                    id: p.id, 
+                                    label: p.opportunityNumber ? `${p.opportunityNumber} - ${p.name}` : p.name 
+                                }))}
+                                value={selectedQueryProjectId}
+                                onChange={setSelectedQueryProjectId}
+                                placeholder="Seleccionar un proyecto..."
+                            />
+                        </div>
+                    </div>
+
+                    {!selectedQueryProjectId ? (
+                        <div className="bg-white dark:bg-dark-card p-12 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm text-center flex flex-col items-center justify-center min-h-[300px]">
+                            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500 mb-4 shadow-inner">
+                                <i className="fas fa-briefcase text-2xl"></i>
+                            </div>
+                            <h3 className="text-base font-black text-gray-700 dark:text-gray-200 uppercase tracking-wider mb-2">Consulta de Imputaciones</h3>
+                            <p className="text-xs text-gray-400 max-w-sm">Seleccioná un proyecto del buscador de arriba para ver las horas imputadas, los colaboradores que trabajaron y el detalle de tareas.</p>
+                        </div>
+                    ) : isLoadingProjectDetail ? (
+                        <div className="bg-white dark:bg-dark-card p-12 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm text-center flex flex-col items-center justify-center min-h-[300px]">
+                            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500 mb-4 shadow-inner">
+                                <i className="fas fa-circle-notch fa-spin text-2xl"></i>
+                            </div>
+                            <h3 className="text-base font-black text-gray-700 dark:text-gray-200 uppercase tracking-wider mb-2">Cargando Historial...</h3>
+                            <p className="text-xs text-gray-400 max-w-sm">Buscando todas las imputaciones históricas del proyecto en la base de datos.</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Project Query KPIs */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-white dark:bg-dark-card p-5 rounded-3xl shadow-sm border border-gray-100 dark:border-dark-border flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl shadow-inner">
+                                        <i className="fas fa-clock"></i>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Horas Imputadas (Histórico)</p>
+                                        <p className="text-2xl font-black text-gray-800 dark:text-white leading-none">
+                                            {projectStats.totalHours.toFixed(0)} <span className="text-sm font-medium text-gray-400">hs</span>
+                                        </p>
+                                        {projectStats.totalExtra > 0 && (
+                                            <p className="text-[9px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded flex items-center gap-1 w-fit mt-1 border border-amber-100 dark:border-amber-800">
+                                                <i className="fas fa-bolt"></i> +{projectStats.totalExtra.toFixed(1)} hs extras
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="bg-white dark:bg-dark-card p-5 rounded-3xl shadow-sm border border-gray-100 dark:border-dark-border flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl shadow-inner">
+                                        <i className="fas fa-users"></i>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Colaboradores Únicos</p>
+                                        <p className="text-2xl font-black text-gray-800 dark:text-white">
+                                            {projectStats.collaboratorCount} <span className="text-sm font-medium text-gray-400">personas</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="bg-white dark:bg-dark-card p-5 rounded-3xl shadow-sm border border-gray-100 dark:border-dark-border flex items-start gap-4">
+                                    <div className="w-12 h-12 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shadow-inner shrink-0 mt-1">
+                                        <i className="fas fa-dollar-sign"></i>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Costo Estimado (MO)</p>
+                                        <div className="grid grid-cols-2 gap-4 divide-x divide-gray-100 dark:divide-dark-border">
+                                            <div>
+                                                <p className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                                    <i className="fas fa-user-tie text-[8px]"></i> PMs
+                                                </p>
+                                                <p className="text-xl font-black text-gray-800 dark:text-white leading-none">
+                                                    ${(projectStats.pmHours * 24).toLocaleString()} <span className="text-[9px] font-normal text-gray-400">USD</span>
+                                                </p>
+                                                <p className="text-[10px] font-medium text-gray-400 mt-1.5 bg-gray-50 dark:bg-dark-bg px-1.5 py-0.5 rounded w-fit">
+                                                    {projectStats.pmHours.toFixed(1)} hs
+                                                </p>
+                                            </div>
+                                            <div className="pl-4">
+                                                <p className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                                    <i className="fas fa-laptop-code text-[8px]"></i> Ingenieros
+                                                </p>
+                                                <p className="text-xl font-black text-gray-800 dark:text-white leading-none">
+                                                    ${(projectStats.engHours * 24).toLocaleString()} <span className="text-[9px] font-normal text-gray-400">USD</span>
+                                                </p>
+                                                <p className="text-[10px] font-medium text-gray-400 mt-1.5 bg-gray-50 dark:bg-dark-bg px-1.5 py-0.5 rounded w-fit">
+                                                    {projectStats.engHours.toFixed(1)} hs
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Details and Graph Section */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Collaborator Breakdown Chart */}
+                                <div className="lg:col-span-1 bg-white dark:bg-dark-card p-6 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm flex flex-col">
+                                    <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500">
+                                            <i className="fas fa-chart-pie"></i>
+                                        </div>
+                                        Participación
+                                    </h3>
+                                    {projectCollaboratorHoursData.length === 0 ? (
+                                        <div className="flex-1 flex items-center justify-center text-xs text-gray-400 italic">Sin datos de gráficos</div>
+                                    ) : (
+                                        <div className="h-64 w-full flex-1">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={projectCollaboratorHoursData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                                                    <XAxis type="number" fontSize={9} tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                                                    <YAxis dataKey="name" type="category" fontSize={9} width={90} tick={{fill: '#64748b', fontWeight: 600}} axisLine={false} tickLine={false} />
+                                                    <Tooltip cursor={{fill: 'rgba(99, 102, 241, 0.05)'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)'}} />
+                                                    <Bar dataKey="regular" name="Hs Regulares" stackId="a" fill="#6366f1" barSize={14} />
+                                                    <Bar dataKey="extra" name="Hs Extras" stackId="a" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={14} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Detailed Allocations Table */}
+                                <div className="lg:col-span-2 bg-white dark:bg-dark-card rounded-3xl shadow-sm border border-gray-100 dark:border-dark-border overflow-hidden flex flex-col">
+                                    <div className="p-6 border-b dark:border-slate-800 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/50">
+                                        <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-500">
+                                                <i className="fas fa-list-ol"></i>
+                                            </div>
+                                            Detalle de Imputaciones
+                                        </h3>
+                                        <span className="text-[10px] font-black bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full uppercase tracking-wider">
+                                            {projectAssignments.length} Registros
+                                        </span>
+                                    </div>
+                                    <div className="overflow-x-auto max-h-[450px]">
+                                        <table className="w-full border-collapse text-xs text-left">
+                                            <thead className="bg-gray-50/50 dark:bg-slate-900/50 text-gray-400 font-black uppercase tracking-widest sticky top-0 z-10 border-b dark:border-slate-700">
+                                                <tr>
+                                                    <th className="p-4 w-[160px]">Fecha</th>
+                                                    <th className="p-4 w-[180px]">Colaborador</th>
+                                                    <th className="p-4 text-center w-[90px]">Horas</th>
+                                                    <th className="p-4">Tarea / Observaciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y dark:divide-slate-800 bg-white dark:bg-slate-900">
+                                                {projectAssignments.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={4} className="p-12 text-center text-gray-400 italic">No se registraron imputaciones de horas para este proyecto.</td>
+                                                    </tr>
+                                                ) : (
+                                                    projectAssignments
+                                                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                        .map(a => {
+                                                            const member = team.find(t => t.id === a.memberId);
+                                                            const memberName = member ? getMemberDisplayName(member.name) : 'Desconocido';
+                                                            const formattedDate = new Date(a.date + 'T00:00:00')
+                                                                .toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
+                                                                .toUpperCase().replace('.', '');
+                                                            return (
+                                                                <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                                                    <td className="p-4 font-mono font-bold text-gray-400 text-[10px]">{formattedDate}</td>
+                                                                    <td className="p-4">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black text-[9px] uppercase">
+                                                                                {memberName.charAt(0)}
+                                                                            </div>
+                                                                            <span className="font-bold text-gray-700 dark:text-gray-300">{memberName}</span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="p-4 text-center">
+                                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 ${a.isExtra ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'}`}>
+                                                                            {a.hours} hs
+                                                                            {a.isExtra && <i className="fas fa-bolt text-[8px]"></i>}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="p-4 text-gray-600 dark:text-gray-300 font-medium">
+                                                                        {a.observations && a.observations !== 'EMPTY' ? a.observations : <span className="text-gray-400 italic">Sin observaciones</span>}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
 
             <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={null}>
                 <div className="p-2">
