@@ -47,6 +47,21 @@ const getMemberDisplayName = (name: string, capacityId?: string) => {
     return entry ? `${entry[1]}-${name}` : name;
 };
 
+const computeIsExtra = (
+    assignments: CapacityAssignment[],
+    memberId: string,
+    date: string,
+    excludeId?: string
+): boolean => {
+    const d = new Date(date + 'T00:00:00');
+    if (d.getDay() === 0 || d.getDay() === 6) return true;
+    if (ARG_HOLIDAYS.includes(date)) return true;
+    const normalHoursToday = assignments
+        .filter(a => a.memberId === memberId && a.date === date && a.id !== excludeId && !a.isExtra)
+        .reduce((sum, a) => sum + (Number(a.hours) || 0), 0);
+    return normalHoursToday >= 8;
+};
+
 export const CapacityView: React.FC = () => {
     const { capacityData, setCapacityData, team, projects, showToast, user, fetchCapacityOnly } = useApp();
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -60,7 +75,6 @@ export const CapacityView: React.FC = () => {
     const [assignProject, setAssignProject] = useState(projects[0]?.id || '');
     const [assignHours, setAssignHours] = useState('');
     const [assignObs, setAssignObs] = useState('');
-    const [assignIsExtra, setAssignIsExtra] = useState(false);
 
     const [inlineCell, setInlineCell] = useState<{ memberId: string, date: string, activityKey: string, assignmentId?: string } | null>(null);
     const [inlineHours, setInlineHours] = useState('');
@@ -281,12 +295,6 @@ export const CapacityView: React.FC = () => {
     }, [capacityData.assignments, team]);
 
     const handleCellClick = (memberId: string, date: string, activityKey?: string, existingAssignment?: CapacityAssignment) => {
-        const d = new Date(date + 'T00:00:00');
-
-        if (!existingAssignment && (d.getDay() === 0 || d.getDay() === 6)) {
-            return;
-        }
-
         if (activityKey) {
             setInlineCell({ memberId, date, activityKey, assignmentId: existingAssignment?.id });
             setInlineHours(existingAssignment ? existingAssignment.hours.toString() : '');
@@ -299,11 +307,9 @@ export const CapacityView: React.FC = () => {
                 aProj = existingAssignment.projectId || projects[0]?.id || '';
                 setAssignHours(existingAssignment.hours.toString());
                 setAssignObs(existingAssignment.observations || '');
-                setAssignIsExtra(existingAssignment.isExtra || false);
             } else {
                 setAssignHours('');
                 setAssignObs('');
-                setAssignIsExtra(false);
             }
 
             setAssignType(aType);
@@ -321,7 +327,6 @@ export const CapacityView: React.FC = () => {
         setAssignProject(projects[0]?.id || '');
         setAssignHours('');
         setAssignObs('');
-        setAssignIsExtra(false);
     };
 
     const saveAssignment = async (h?: string, c?: any) => {
@@ -330,19 +335,36 @@ export const CapacityView: React.FC = () => {
 
         const isInline = h !== undefined;
         const hoursStr = isInline ? h : assignHours;
+        const existing = cell.assignmentId ? capacityData.assignments.find(a => a.id === cell.assignmentId) : null;
 
-        if (isInline && (hoursStr === '' || hoursStr.trim() === '')) {
-            setInlineCell(null);
-            return;
+        if (isInline) {
+            const isEmpty = hoursStr === '' || hoursStr.trim() === '';
+            const isZero = !isEmpty && parseFloat(hoursStr) === 0;
+            if ((isEmpty || isZero) && existing) {
+                setIsSaving(true);
+                try {
+                    const { error } = await supabase.from('capacity_assignments').delete().eq('id', existing.id);
+                    if (error) throw error;
+                    setCapacityData(prev => ({ assignments: prev.assignments.filter(a => a.id !== existing.id) }));
+                    setInlineCell(null);
+                    showToast('Registro eliminado', 'info');
+                } catch (err: any) {
+                    showToast('Error: ' + err.message, 'error');
+                } finally {
+                    setIsSaving(false);
+                }
+                return;
+            }
+            if (isEmpty) {
+                setInlineCell(null);
+                return;
+            }
         }
 
         const hours = parseFloat(hoursStr);
-        const existing = cell.assignmentId ? capacityData.assignments.find(a => a.id === cell.assignmentId) : null;
         const obs = isInline ? (existing?.observations || '') : assignObs;
         const type = isInline ? (cell.activityKey?.startsWith('project-') ? 'project' : cell.activityKey?.replace('type-', '')) : assignType;
         const projectId = isInline ? (cell.activityKey?.startsWith('project-') ? cell.activityKey.replace('project-', '') : null) : (type === 'project' ? assignProject : null);
-        const isExtraVal = isInline ? (existing?.isExtra || false) : assignIsExtra;
-        const finalObs = isExtraVal ? `[IS_EXTRA] ${obs}` : obs;
 
         if (isNaN(hours) || hours < 0) {
             if (isInline) setInlineCell(null);
@@ -396,6 +418,13 @@ export const CapacityView: React.FC = () => {
             const results: CapacityAssignment[] = [];
             
             for (const date of datesToSave) {
+                const isExtraVal = computeIsExtra(
+                    capacityData.assignments,
+                    cell.memberId,
+                    date,
+                    date === cell.date ? existing?.id : undefined
+                );
+                const finalObs = isExtraVal ? `[IS_EXTRA] ${obs}` : obs;
                 const member = team.find(m => m.id === cell.memberId);
                 const payload = {
                     member_id: cell.memberId,
@@ -883,10 +912,12 @@ export const CapacityView: React.FC = () => {
                                     const { day, name } = formatDateShort(d);
                                     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                                     const iso = dayISOs[idx];
+                                    const isHoliday = ARG_HOLIDAYS.includes(iso);
+                                    const isExtraDay = isWeekend || isHoliday;
                                     return (
-                                        <th key={iso} className={`sticky top-0 z-30 border-b dark:border-slate-700 w-[50px] p-3 text-center ${isWeekend ? 'bg-gray-100/50 dark:bg-slate-900/50' : 'bg-white dark:bg-dark-card'}`}>
+                                        <th key={iso} className={`sticky top-0 z-30 border-b dark:border-slate-700 w-[50px] p-3 text-center ${isExtraDay ? 'bg-amber-50/60 dark:bg-amber-900/10' : 'bg-white dark:bg-dark-card'}`}>
                                             <div className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">{name}</div>
-                                            <div className={`text-[15px] font-black ${isWeekend ? 'text-gray-300' : 'text-gray-800 dark:text-white'}`}>{day}</div>
+                                            <div className={`text-[15px] font-black ${isExtraDay ? 'text-amber-400 dark:text-amber-500' : 'text-gray-800 dark:text-white'}`}>{day}</div>
                                         </th>
                                     );
                                 })}
@@ -946,11 +977,11 @@ export const CapacityView: React.FC = () => {
                                                 const extTotal = dayExtraTotals[iso];
                                                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                                                 const isHoliday = ARG_HOLIDAYS.includes(iso);
-                                                const isDisabled = isWeekend || isHoliday;
+                                                const isExtraDay = isWeekend || isHoliday;
                                                 return (
                                                     <td key={iso}
-                                                        className={`text-center font-black text-xs p-0 h-14 group/cell relative ${isDisabled ? 'bg-gray-50 dark:bg-slate-900 cursor-not-allowed' : 'cursor-pointer hover:bg-indigo-50/30'}`}
-                                                        onClick={() => !isDisabled && handleCellClick(member.id, iso)}
+                                                        className={`text-center font-black text-xs p-0 h-14 group/cell relative cursor-pointer ${isExtraDay ? 'bg-amber-50/30 dark:bg-amber-900/10 hover:bg-amber-50/60' : 'hover:bg-indigo-50/30'}`}
+                                                        onClick={() => handleCellClick(member.id, iso)}
                                                     >
                                                         {(regTotal > 0 || extTotal > 0) ? (
                                                             <div className="flex flex-col items-center justify-center leading-none">
@@ -959,12 +990,8 @@ export const CapacityView: React.FC = () => {
                                                                 </span>}
                                                                 {extTotal > 0 && <span className="text-[9px] text-amber-500 mt-0.5 font-bold">+{extTotal}</span>}
                                                             </div>
-                                                        ) : isDisabled ? (
-                                                            <span className="text-gray-200 dark:text-slate-800 text-[10px]">
-                                                                <i className="fas fa-ban opacity-40"></i>
-                                                            </span>
                                                         ) : (
-                                                            <div className="opacity-0 group-hover/cell:opacity-100 transition-all scale-75 group-hover/cell:scale-110 text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300">
+                                                            <div className={`opacity-0 group-hover/cell:opacity-100 transition-all scale-75 group-hover/cell:scale-110 ${isExtraDay ? 'text-amber-400 hover:text-amber-600' : 'text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300'}`}>
                                                                 <i className="fas fa-plus-circle text-lg drop-shadow-md"></i>
                                                             </div>
                                                         )}
@@ -1014,12 +1041,12 @@ export const CapacityView: React.FC = () => {
                                                         const extSum = dAssigns.filter(a => a.isExtra).reduce((s, a) => s + a.hours, 0);
                                                         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                                                         const isHoliday = ARG_HOLIDAYS.includes(iso);
-                                                        const isDisabled = isWeekend || isHoliday;
+                                                        const isExtraDay = isWeekend || isHoliday;
 
                                                         return (
                                                             <td key={iso}
-                                                                className={`text-center border-l dark:border-slate-800 border-t border-gray-50 dark:border-slate-800/50 p-0 h-12 group/cell relative ${isDisabled ? 'bg-gray-50/30 dark:bg-slate-900/30' : 'cursor-pointer hover:bg-indigo-50/20'}`}
-                                                                onClick={() => !isDisabled && handleCellClick(member.id, iso, key, dAssigns[0])}
+                                                                className={`text-center border-l dark:border-slate-800 border-t border-gray-50 dark:border-slate-800/50 p-0 h-12 group/cell relative cursor-pointer ${isExtraDay ? 'bg-amber-50/20 dark:bg-amber-900/5 hover:bg-amber-50/50' : 'hover:bg-indigo-50/20'}`}
+                                                                onClick={() => handleCellClick(member.id, iso, key, dAssigns[0])}
                                                             >
                                                                 {inlineCell?.memberId === member.id && inlineCell?.date === iso && inlineCell?.activityKey === key ? (
                                                                     <input
@@ -1039,12 +1066,8 @@ export const CapacityView: React.FC = () => {
                                                                             {extSum > 0 && <span className="text-[9px] font-black text-amber-500 mt-0.5">+{extSum}</span>}
                                                                             {isSaving && inlineCell?.date === iso && <i className="fas fa-circle-notch fa-spin text-[8px] text-indigo-400 absolute top-1 right-1"></i>}
                                                                         </div>
-                                                                    ) : isDisabled ? (
-                                                                        <span className="text-gray-200 dark:text-slate-800 text-[8px] opacity-40">
-                                                                            <i className="fas fa-ban"></i>
-                                                                        </span>
                                                                     ) : (
-                                                                        <div className="opacity-0 group-hover/cell:opacity-100 transition-all scale-75 group-hover/cell:scale-110 text-indigo-300 hover:text-indigo-500">
+                                                                        <div className={`opacity-0 group-hover/cell:opacity-100 transition-all scale-75 group-hover/cell:scale-110 ${isExtraDay ? 'text-amber-300 hover:text-amber-500' : 'text-indigo-300 hover:text-indigo-500'}`}>
                                                                             <i className="fas fa-plus-circle text-sm drop-shadow-sm"></i>
                                                                         </div>
                                                                     )
@@ -1465,19 +1488,38 @@ export const CapacityView: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="mb-6 flex items-center justify-end">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input 
-                                type="checkbox" 
-                                checked={assignIsExtra} 
-                                onChange={e => setAssignIsExtra(e.target.checked)}
-                                className="w-4 h-4 text-amber-500 rounded focus:ring-amber-500"
-                            />
-                            <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full">
-                                <i className="fas fa-bolt mr-1"></i> Son Horas Extras
-                            </span>
-                        </label>
-                    </div>
+                    {(() => {
+                        if (!selectedCell?.date) return null;
+                        const _d = new Date(selectedCell.date + 'T00:00:00');
+                        const isWeekendDay = _d.getDay() === 0 || _d.getDay() === 6;
+                        const isHolidayDay = ARG_HOLIDAYS.includes(selectedCell.date);
+                        const normalHoursToday = capacityData.assignments
+                            .filter(a => a.memberId === selectedCell.memberId && a.date === selectedCell.date && a.id !== selectedCell.assignmentId && !a.isExtra)
+                            .reduce((sum, a) => sum + (Number(a.hours) || 0), 0);
+                        const autoIsExtra = isWeekendDay || isHolidayDay || normalHoursToday >= 8;
+                        let reason = '';
+                        if (isWeekendDay) reason = 'Fin de semana';
+                        else if (isHolidayDay) reason = 'Feriado nacional';
+                        else if (normalHoursToday >= 8) reason = `${normalHoursToday}hs ya asignadas hoy`;
+
+                        return autoIsExtra ? (
+                            <div className="mb-6 flex items-center gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl px-4 py-3">
+                                <i className="fas fa-bolt text-amber-500"></i>
+                                <div>
+                                    <span className="text-[11px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest">Horas Extra</span>
+                                    <span className="text-xs text-amber-600 dark:text-amber-500 ml-2">— {reason}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mb-6 flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl px-4 py-3">
+                                <i className="fas fa-check-circle text-emerald-500"></i>
+                                <div>
+                                    <span className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Horas Normales</span>
+                                    {normalHoursToday > 0 && <span className="text-xs text-emerald-600 dark:text-emerald-500 ml-2">— {normalHoursToday}hs ya asignadas hoy</span>}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {assignType === 'project' && (
                         <div className="mb-6">
