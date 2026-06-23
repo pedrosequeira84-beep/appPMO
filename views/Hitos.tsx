@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import Modal from '../components/Modal';
-import { Milestone, Project } from '../types';
+import { Milestone, Project, Change, DateChangeHistoryEntry } from '../types';
 import { supabase } from '../utils/supabase';
 import SearchableSelect from '../components/SearchableSelect';
 import { formatDate } from '../utils/helpers';
+import { generateUUID } from '../utils/helpers';
 
 interface MilestoneCardProps {
     milestone: Milestone;
@@ -13,9 +14,10 @@ interface MilestoneCardProps {
     onDelete: (id: string) => void;
     onCopy: (milestone: Milestone) => void;
     onAddSub?: (milestone: Milestone) => void;
+    changes?: Change[];
 }
 
-const MilestoneCard: React.FC<MilestoneCardProps> = ({ milestone, project, onEdit, onDelete, onCopy, onAddSub, subMilestones }) => {
+const MilestoneCard: React.FC<MilestoneCardProps> = ({ milestone, project, onEdit, onDelete, onCopy, onAddSub, subMilestones, changes = [] }) => {
     const pct = milestone.amount > 0 ? (milestone.receivedAmount / milestone.amount) * 100 : 0;
     const hasSubs = subMilestones && subMilestones.length > 0;
     const subTotalReceived = hasSubs ? subMilestones.reduce((acc, s) => acc + s.receivedAmount, 0) : milestone.receivedAmount;
@@ -77,13 +79,71 @@ const MilestoneCard: React.FC<MilestoneCardProps> = ({ milestone, project, onEdi
                             {milestone.currency} {(hasSubs ? subTotalAmount : milestone.amount).toLocaleString()}
                         </span>
                     </div>
-                    <div className="text-right">
-                        <span className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Fecha Est.</span>
-                        <span className="text-sm font-bold text-gray-600 dark:text-gray-400 leading-none italic">
-                            {formatDate(milestone.date)}
-                        </span>
+                    <div className="text-right space-y-2">
+                        <div>
+                            <span className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center justify-end gap-1">
+                                <i className="fas fa-lock text-[7px] text-gray-300"></i> Fecha Teórica
+                            </span>
+                            <span className={`text-sm font-bold leading-none italic ${milestone.realDate ? 'text-gray-400 dark:text-gray-600 line-through decoration-gray-300' : 'text-gray-600 dark:text-gray-400'}`}>
+                                {formatDate(milestone.date)}
+                            </span>
+                        </div>
+                        {milestone.realDate && (
+                            <div>
+                                <span className="block text-[8px] font-black uppercase tracking-widest mb-1 text-amber-500">
+                                    Fecha Real
+                                </span>
+                                <span className={`text-sm font-black leading-none ${new Date(milestone.realDate) > new Date(milestone.date) ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                    {formatDate(milestone.realDate)}
+                                    {new Date(milestone.realDate) > new Date(milestone.date) && (
+                                        <i className="fas fa-arrow-up text-[9px] ml-1 opacity-70"></i>
+                                    )}
+                                </span>
+                            </div>
+                        )}
                     </div>
                 </div>
+
+                {/* Historial de cambios de fecha */}
+                {milestone.dateChangeHistory && milestone.dateChangeHistory.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-gray-50 dark:border-slate-800">
+                        <div className="flex items-center gap-2 mb-2">
+                            <i className="fas fa-history text-[9px] text-indigo-400"></i>
+                            <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">
+                                Historial de fechas ({milestone.dateChangeHistory.length})
+                            </span>
+                        </div>
+                        <div className="space-y-1.5">
+                            {milestone.dateChangeHistory.map((entry: DateChangeHistoryEntry, i: number) => {
+                                const linkedChanges = changes.filter(c => entry.changeIds?.includes(c.id));
+                                return (
+                                    <div key={entry.id || i} className="flex items-start gap-2 p-2 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                                        <div className="w-4 h-4 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <i className="fas fa-arrow-right text-[7px] text-indigo-500"></i>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {entry.previousDate && (
+                                                    <span className="text-[9px] font-bold text-gray-400 line-through">{formatDate(entry.previousDate)}</span>
+                                                )}
+                                                <i className="fas fa-long-arrow-alt-right text-[7px] text-indigo-400"></i>
+                                                <span className="text-[9px] font-black text-indigo-700 dark:text-indigo-300">{formatDate(entry.newDate)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                <span className="text-[8px] text-gray-400">{new Date(entry.changedAt).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                                {linkedChanges.length > 0 && (
+                                                    <span className="text-[8px] font-bold text-indigo-500">
+                                                        · CC: {linkedChanges.map(c => c.registrationNumber || 'S/N').join(', ')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {hasSubs && (
@@ -341,10 +401,12 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
 };
 
 export const HitosView: React.FC = () => {
-    const { milestones, setMilestones, projects, setProjects, showToast, currentUserMember } = useApp();
+    const { milestones, setMilestones, projects, setProjects, showToast, currentUserMember, changes, user } = useApp();
+    const isAdmin = user?.email?.toLowerCase() === 'pedro.sequeira@bghtechpartner.com';
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
     const [formData, setFormData] = useState<Partial<Milestone>>({});
+    const [justificationChangeIds, setJustificationChangeIds] = useState<string[]>([]);
 
     // Filtros
     const [searchTerm, setSearchTerm] = useState('');
@@ -409,9 +471,11 @@ export const HitosView: React.FC = () => {
 
     const handleEdit = (m: Milestone) => {
         setEditingMilestone(m);
+        setJustificationChangeIds([]);
         setFormData({
             ...m,
-            date: m.date.split('T')[0] // Format for date input
+            date: m.date.split('T')[0],
+            realDate: m.realDate ? m.realDate.split('T')[0] : ''
         });
         setIsModalOpen(true);
     };
@@ -442,12 +506,22 @@ export const HitosView: React.FC = () => {
             return showToast('Complete los campos obligatorios', 'error');
         }
 
+        // Validate: if real date is being set/changed, require a change control
+        if (editingMilestone) {
+            const originalRealDate = editingMilestone.realDate ? editingMilestone.realDate.split('T')[0] : '';
+            const newRealDate = formData.realDate || '';
+            if (newRealDate && newRealDate !== originalRealDate && justificationChangeIds.length === 0) {
+                return showToast('Debe asociar al menos un Control de Cambio para justificar el cambio de fecha', 'error');
+            }
+        }
+
         try {
             const payload = {
                 project_id: formData.projectId,
                 description: formData.description,
                 amount: Number(formData.amount),
-                date: formData.date,
+                date: editingMilestone ? editingMilestone.date : formData.date, // theoretical date never changes after creation
+                real_date: formData.realDate || null,
                 received_amount: Number(formData.receivedAmount || 0),
                 is_received: formData.isReceived,
                 currency: formData.currency || 'USD',
@@ -462,7 +536,36 @@ export const HitosView: React.FC = () => {
                 const { error } = await supabase.from('milestones').update(payload).eq('id', editingMilestone.id);
                 if (error) throw error;
 
-                const updatedM: Milestone = { ...editingMilestone, ...payload, projectId: payload.project_id, isReceived: payload.is_received, receivedAmount: payload.received_amount, ocId: payload.oc_id, ocPosition: payload.oc_position, receivedPercentage: payload.received_percentage, comments: payload.comments };
+                // Track real date change in history
+                let newHistory = editingMilestone.dateChangeHistory || [];
+                const originalRealDate = editingMilestone.realDate ? editingMilestone.realDate.split('T')[0] : '';
+                const newRealDate = formData.realDate || '';
+                if (newRealDate && newRealDate !== originalRealDate && justificationChangeIds.length > 0) {
+                    const historyEntry: DateChangeHistoryEntry = {
+                        id: generateUUID(),
+                        previousDate: originalRealDate || editingMilestone.date,
+                        newDate: newRealDate,
+                        changeIds: justificationChangeIds,
+                        changedAt: new Date().toISOString()
+                    };
+                    newHistory = [...newHistory, historyEntry];
+                    await supabase.from('milestones').update({ date_change_history: newHistory }).eq('id', editingMilestone.id);
+                }
+
+                const updatedM: Milestone = {
+                    ...editingMilestone,
+                    ...payload,
+                    projectId: payload.project_id,
+                    date: payload.date,
+                    realDate: payload.real_date || undefined,
+                    dateChangeHistory: newHistory,
+                    isReceived: payload.is_received,
+                    receivedAmount: payload.received_amount,
+                    ocId: payload.oc_id,
+                    ocPosition: payload.oc_position,
+                    receivedPercentage: payload.received_percentage,
+                    comments: payload.comments
+                };
 
                 setMilestones(prev => prev.map(m => m.id === editingMilestone.id ? updatedM : m));
                 setProjects(prev => prev.map(p => ({
@@ -483,6 +586,8 @@ export const HitosView: React.FC = () => {
                     description: r.description,
                     amount: r.amount,
                     date: r.date,
+                    realDate: undefined,
+                    dateChangeHistory: [],
                     receivedAmount: r.received_amount,
                     isReceived: r.is_received,
                     currency: r.currency,
@@ -500,6 +605,7 @@ export const HitosView: React.FC = () => {
                 showToast('Hito creado exitosamente', 'success');
             }
             setIsModalOpen(false);
+            setJustificationChangeIds([]);
         } catch (err: any) {
             showToast('Error al guardar: ' + err.message, 'error');
         }
@@ -777,6 +883,7 @@ export const HitosView: React.FC = () => {
                                                 onDelete={handleDelete}
                                                 onCopy={handleCopy}
                                                 onAddSub={handleAddSub}
+                                                changes={changes}
                                                 subMilestones={projHitos.filter(sm => sm.parentId === m.id).sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())}
                                             />
                                         ))}
@@ -791,7 +898,7 @@ export const HitosView: React.FC = () => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {sortedMilestones.map(m => (
-                        <MilestoneCard key={m.id} milestone={m} project={projects.find(p => p.id === m.projectId)} onEdit={handleEdit} onDelete={handleDelete} onCopy={handleCopy} />
+                        <MilestoneCard key={m.id} milestone={m} project={projects.find(p => p.id === m.projectId)} onEdit={handleEdit} onDelete={handleDelete} onCopy={handleCopy} changes={changes} />
                     ))}
                 </div>
             )
@@ -858,10 +965,125 @@ export const HitosView: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 ml-1">Fecha Estimada de Recepción</label>
-                                <input type="date" className="w-full h-14 px-6 rounded-2xl bg-gray-50 dark:bg-slate-800 border-2 border-transparent focus:border-emerald-500 transition-all font-bold text-sm" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-                            </div>
+                            {editingMilestone ? (
+                                <div>
+                                    {isAdmin ? (
+                                        <>
+                                            <label className="block text-[10px] font-black text-purple-600 uppercase tracking-widest mb-3 ml-1 flex items-center gap-2">
+                                                <i className="fas fa-user-shield text-purple-400"></i> Fecha Teórica (editable — solo admin)
+                                            </label>
+                                            <input
+                                                type="date"
+                                                className="w-full h-14 px-6 rounded-2xl bg-purple-50 dark:bg-purple-900/10 border-2 border-purple-200 dark:border-purple-800 focus:border-purple-500 transition-all font-bold text-sm text-purple-800 dark:text-purple-300"
+                                                value={formData.date}
+                                                onChange={e => setFormData({ ...formData, date: e.target.value })}
+                                            />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 ml-1 flex items-center gap-2">
+                                                <i className="fas fa-lock text-gray-300"></i> Fecha Teórica (Original — no editable)
+                                            </label>
+                                            <div className="w-full h-14 px-6 rounded-2xl bg-gray-100 dark:bg-slate-800/50 border-2 border-gray-200 dark:border-slate-700 flex items-center text-gray-500 dark:text-gray-500 font-bold text-sm select-none cursor-not-allowed">
+                                                {formatDate(editingMilestone.date)}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 ml-1">Fecha Teórica de Recepción *</label>
+                                    <input type="date" className="w-full h-14 px-6 rounded-2xl bg-gray-50 dark:bg-slate-800 border-2 border-transparent focus:border-emerald-500 transition-all font-bold text-sm" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+                                </div>
+                            )}
+
+                            {editingMilestone && (
+                                <div>
+                                    <label className="block text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 ml-1">Fecha Real de Recepción</label>
+                                    <input
+                                        type="date"
+                                        className="w-full h-14 px-6 rounded-2xl bg-amber-50 dark:bg-amber-900/10 border-2 border-amber-200 dark:border-amber-800 focus:border-amber-500 transition-all font-bold text-sm text-amber-700 dark:text-amber-300"
+                                        value={formData.realDate || ''}
+                                        onChange={e => setFormData({ ...formData, realDate: e.target.value })}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Justificación de cambio de fecha */}
+                            {editingMilestone && formData.realDate && formData.realDate !== (editingMilestone.realDate ? editingMilestone.realDate.split('T')[0] : '') && (
+                                <div className="md:col-span-2 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl space-y-3">
+                                    <p className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                                        <i className="fas fa-exclamation-triangle"></i>
+                                        Justificación de cambio de fecha — asociar Control de Cambio
+                                    </p>
+                                    <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto p-2 bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
+                                        {changes.filter(c => c.projectId === formData.projectId).length > 0 ? (
+                                            changes.filter(c => c.projectId === formData.projectId).map(c => (
+                                                <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                                                        checked={justificationChangeIds.includes(c.id)}
+                                                        onChange={e => {
+                                                            const ids = e.target.checked
+                                                                ? [...justificationChangeIds, c.id]
+                                                                : justificationChangeIds.filter(id => id !== c.id);
+                                                            setJustificationChangeIds(ids);
+                                                        }}
+                                                    />
+                                                    <div className="text-xs">
+                                                        <span className="font-bold text-gray-700 dark:text-gray-200">Reg: {c.registrationNumber || 'S/N'}</span>
+                                                        <span className="text-gray-400 ml-2">{c.type}</span>
+                                                        <span className="text-gray-400 ml-2 italic">{formatDate(c.date)}</span>
+                                                    </div>
+                                                </label>
+                                            ))
+                                        ) : (
+                                            <p className="text-xs text-center py-4 text-gray-500">No hay controles de cambio cargados para este proyecto.</p>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-amber-600 dark:text-amber-400 italic text-right">Debe seleccionar al menos un cambio registrado previamente.</p>
+                                </div>
+                            )}
+
+                            {/* Historial de cambios de fecha (dentro del modal) */}
+                            {editingMilestone && editingMilestone.dateChangeHistory && editingMilestone.dateChangeHistory.length > 0 && (
+                                <div className="md:col-span-2 p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl">
+                                    <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                        <i className="fas fa-history text-indigo-500"></i>
+                                        Historial de Cambios de Fecha
+                                        <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-black">
+                                            {editingMilestone.dateChangeHistory.length}
+                                        </span>
+                                    </h5>
+                                    <div className="space-y-2">
+                                        {editingMilestone.dateChangeHistory.map((entry: DateChangeHistoryEntry, i: number) => {
+                                            const linkedChanges = changes.filter(c => entry.changeIds?.includes(c.id));
+                                            return (
+                                                <div key={entry.id || i} className="flex items-start gap-3 text-xs p-2 bg-white dark:bg-slate-800 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                                                    <div className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                                                        <i className="fas fa-arrow-right text-[8px] text-indigo-500"></i>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-gray-400 line-through">{entry.previousDate ? formatDate(entry.previousDate) : '—'}</span>
+                                                            <span className="font-black text-indigo-700 dark:text-indigo-300">→ {formatDate(entry.newDate)}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-400">
+                                                            <span>{new Date(entry.changedAt).toLocaleDateString('es-AR')}</span>
+                                                            {linkedChanges.length > 0 && (
+                                                                <span className="font-bold text-indigo-500">
+                                                                    CC: {linkedChanges.map(c => c.registrationNumber || 'S/N').join(', ')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-[28px] md:col-span-2 space-y-6">
                                 <div className="flex items-center justify-between">

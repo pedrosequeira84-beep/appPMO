@@ -122,6 +122,8 @@ export interface Milestone {
   description: string;
   amount: number;
   date: string;
+  realDate?: string;
+  dateChangeHistory?: DateChangeHistoryEntry[];
   receivedAmount: number;
   isReceived: boolean;
   currency: string;
@@ -243,7 +245,7 @@ export const COST_CATEGORIES = [
 
 // Raw DB Row Types from Supabase
 export interface DBProject { id: string; name: string; client_name: string; pm: string; opportunity_number: string; status: any; start_date: string; theoretical_end_date: string; real_end_date?: string; progress: number; budget: any; hw_value: number; services_value: number; hw_cost: number; services_cost: number; cm: number; values_comments?: string; created_at: string; updated_at?: string; documentation_link?: string; health_status: any; date_change_history: any; status_history: any; vendors: any; third_party_services?: boolean; third_party_provider?: string; vertical?: string; segment?: string; priority?: 1 | 2 | 3 | 4 | 5; initial_real_values: any; ai_summary?: string; }
-export interface DBMilestone { id: string; project_id: string; description: string; amount: number; date: string; received_amount: number; is_received: boolean; currency: string; oc_id?: string; oc_position?: string; received_percentage?: number; parent_id?: string; created_at?: string; }
+export interface DBMilestone { id: string; project_id: string; description: string; amount: number; date: string; real_date?: string; date_change_history?: any; received_amount: number; is_received: boolean; currency: string; oc_id?: string; oc_position?: string; received_percentage?: number; parent_id?: string; created_at?: string; }
 export interface DBOC { id: string; project_id: string; description: string; amount: number; }
 export interface DBRisk { id: string; project_id: string; description: string; probability: any; impact: any; is_problem: boolean; is_mitigated?: boolean; plan?: string; date?: string; created_at: string; }
 export interface DBChange { id: string; project_id: string; description: string; type: any; date: string; registration_number?: string; created_at: string; }
