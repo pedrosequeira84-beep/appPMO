@@ -23,7 +23,8 @@ const MEMBER_ID_MAP: Record<string, string> = {
     'VILLEGAS': '342',
     'OJEDA': '343',
     'Araujo': '361',
-    'Le Favi': '368'
+    'Le Favi': '368',
+    'Moreno': '369'
 };
 
 const ARG_HOLIDAYS = [
@@ -37,8 +38,9 @@ const ARG_HOLIDAYS = [
     '2026-10-12', '2026-11-20', '2026-11-23', '2026-12-08', '2026-12-25'
 ];
 
-const getMemberDisplayName = (name: string) => {
+const getMemberDisplayName = (name: string, capacityId?: string) => {
     if (!name) return 'Desconocido';
+    if (capacityId) return `${capacityId}-${name}`;
     const entry = Object.entries(MEMBER_ID_MAP).find(([key]) =>
         name.toLowerCase().includes(key.toLowerCase())
     );
@@ -165,7 +167,7 @@ export const CapacityView: React.FC = () => {
         const counts: Record<string, { regular: number, extra: number, total: number }> = {};
         projectAssignments.forEach(a => {
             const member = team.find(t => t.id === a.memberId);
-            const displayName = member ? getMemberDisplayName(member.name) : 'Desconocido';
+            const displayName = member ? getMemberDisplayName(member.name, member.capacity_id) : 'Desconocido';
             if (!counts[displayName]) counts[displayName] = { regular: 0, extra: 0, total: 0 };
             if (a.isExtra) {
                 counts[displayName].extra += Number(a.hours);
@@ -661,7 +663,7 @@ export const CapacityView: React.FC = () => {
                 Object.entries(dateMap).forEach(([date, assignments]) => {
                     assignments.forEach((a: CapacityAssignment) => {
                         rows.push({
-                            'Recurso': getMemberDisplayName(member.name),
+                            'Recurso': getMemberDisplayName(member.name, member?.capacity_id),
                             'Actividad / Proyecto': activityLabel,
                             'Fecha': date,
                             'Horas': a.hours,
@@ -757,7 +759,7 @@ export const CapacityView: React.FC = () => {
                     extra += assigns.filter(a => a.isExtra).reduce((s, a) => s + a.hours, 0);
                 });
             });
-            return { name: getMemberDisplayName(m.name), regular, extra, total: regular + extra };
+            return { name: getMemberDisplayName(m.name, m.capacity_id), regular, extra, total: regular + extra };
         })
         .sort((a, b) => b.total - a.total)
         .slice(0, 6);
@@ -923,7 +925,7 @@ export const CapacityView: React.FC = () => {
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center justify-between gap-2">
-                                                            <div className="font-black text-gray-800 dark:text-white text-sm truncate tracking-tight">{getMemberDisplayName(member.name)}</div>
+                                                            <div className="font-black text-gray-800 dark:text-white text-sm truncate tracking-tight">{getMemberDisplayName(member.name, member.capacity_id)}</div>
                                                             <i 
                                                                 className={`fas fa-copy text-[10px] text-blue-500 cursor-pointer hover:text-blue-600 transition-all ${isSaving ? 'opacity-20 cursor-not-allowed' : 'opacity-40'}`}
                                                                 title="Copiar registros del mes anterior"
@@ -1120,7 +1122,7 @@ export const CapacityView: React.FC = () => {
                                 weeklyHours[wk] = (weeklyHours[wk] || 0) + Number(a.hours);
                             });
                             const maxWeek = Object.entries(weeklyHours).sort((a, b) => b[1] - a[1])[0];
-                            return { id: m.id, name: m.name, week: maxWeek ? maxWeek[0] : '-', hours: maxWeek ? maxWeek[1] : 0 };
+                            return { id: m.id, name: m.name, capacity_id: m.capacity_id, week: maxWeek ? maxWeek[0] : '-', hours: maxWeek ? maxWeek[1] : 0 };
                         })
                         .sort((a, b) => b.hours - a.hours)
                         .slice(0, 5)
@@ -1131,7 +1133,7 @@ export const CapacityView: React.FC = () => {
                                         <i className="fas fa-bolt text-sm"></i>
                                     </div>
                                     <div>
-                                        <div className="text-sm font-bold text-gray-700 dark:text-gray-300">{getMemberDisplayName(item.name)}</div>
+                                        <div className="text-sm font-bold text-gray-700 dark:text-gray-300">{getMemberDisplayName(item.name, item.capacity_id)}</div>
                                         <div className="text-[10px] text-gray-400 font-bold tracking-widest uppercase">{item.week}</div>
                                     </div>
                                 </div>
@@ -1159,7 +1161,7 @@ export const CapacityView: React.FC = () => {
                                     total += (mActivities[key][iso] || []).reduce((s, a) => s + a.hours, 0);
                                 });
                             });
-                            return { id: m.id, name: m.name, hours: total };
+                            return { id: m.id, name: m.name, capacity_id: m.capacity_id, hours: total };
                         })
                         .sort((a, b) => b.hours - a.hours)
                         .slice(0, 5)
@@ -1169,7 +1171,7 @@ export const CapacityView: React.FC = () => {
                             return (
                                 <div key={item.id} className="space-y-2 group">
                                     <div className="flex justify-between text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                                        <span>{getMemberDisplayName(item.name)}</span>
+                                        <span>{getMemberDisplayName(item.name, item.capacity_id)}</span>
                                         <span className="text-gray-800 dark:text-white font-black">{item.hours.toFixed(1)}H <span className="text-gray-400 font-normal">/ {pct.toFixed(0)}%</span></span>
                                     </div>
                                     <div className="w-full bg-gray-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden shadow-inner">
@@ -1370,7 +1372,7 @@ export const CapacityView: React.FC = () => {
                                                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                                                         .map(a => {
                                                             const member = team.find(t => t.id === a.memberId);
-                                                            const memberName = member ? getMemberDisplayName(member.name) : 'Desconocido';
+                                                            const memberName = member ? getMemberDisplayName(member.name, member.capacity_id) : 'Desconocido';
                                                             const formattedDate = new Date(a.date + 'T00:00:00')
                                                                 .toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
                                                                 .toUpperCase().replace('.', '');

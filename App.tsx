@@ -14,7 +14,7 @@ import { ChangesView } from './views/Changes';
 import { HitosView } from './views/Hitos';
 import { ProfileView } from './views/Profile';
 import { DocumentationView } from './views/Documentation';
-
+import { TeamManagementView } from './views/TeamManagement';
 
 const MainLayout: React.FC = () => {
     const { currentView, user } = useApp();
@@ -37,6 +37,7 @@ const MainLayout: React.FC = () => {
             case 'lecciones': return <LessonsLearnedView />;
             case 'documentation': return <DocumentationView />;
             case 'perfil': return <ProfileView />;
+            case 'team-management': return <TeamManagementView />;
             default: return <DashboardView />;
         }
     };

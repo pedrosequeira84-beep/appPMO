@@ -8,7 +8,8 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
-  const { currentView, setCurrentView, darkMode, toggleDarkMode, signOut } = useApp();
+  const { currentView, setCurrentView, darkMode, toggleDarkMode, signOut, user } = useApp();
+  const isAdmin = user?.email?.toLowerCase() === 'pedro.sequeira@bghtechpartner.com';
   const [dashboardsOpen, setDashboardsOpen] = React.useState(true);
 
   const navItemClass = (view: ViewName) => `w-full flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors text-left ${currentView === view ? 'bg-slate-800 text-white border-l-4 border-blue-500' : 'text-slate-300'
@@ -86,6 +87,11 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
           <li><button onClick={() => handleNav('documentation')} className={navItemClass('documentation')}>
             <i className="fas fa-folder-open w-6 text-center text-blue-400"></i><span>Documentación PMO</span>
           </button></li>
+          {isAdmin && (
+            <li><button onClick={() => handleNav('team-management')} className={navItemClass('team-management')}>
+              <i className="fas fa-users-cog w-6 text-center text-cyan-400"></i><span>Gestión Recursos</span>
+            </button></li>
+          )}
           <li className="mt-6 pt-6 border-t border-slate-700/50"><button onClick={() => handleNav('perfil')} className={navItemClass('perfil')}>
             <i className="fas fa-user-cog w-6 text-center text-gray-400"></i><span>Ajustes de Perfil</span>
           </button></li>

@@ -186,6 +186,7 @@ export interface TeamMember {
   name: string;
   role: string;
   email: string;
+  capacity_id?: string;
 }
 
 export interface DocumentationSection {
@@ -226,7 +227,7 @@ export interface DashboardFilters {
   segment: string | null;
 }
 
-export type ViewName = 'dashboard-pmo' | 'dashboard-ejecutivo' | 'alta-proyecto' | 'gastos' | 'hitos' | 'capacity' | 'riesgos' | 'cambios' | 'lecciones' | 'documentation' | 'perfil';
+export type ViewName = 'dashboard-pmo' | 'dashboard-ejecutivo' | 'alta-proyecto' | 'gastos' | 'hitos' | 'capacity' | 'riesgos' | 'cambios' | 'lecciones' | 'documentation' | 'perfil' | 'team-management';
 
 export const COST_CATEGORIES = [
   "1-Costos Comerciales",
@@ -248,7 +249,7 @@ export interface DBRisk { id: string; project_id: string; description: string; p
 export interface DBChange { id: string; project_id: string; description: string; type: any; date: string; registration_number?: string; created_at: string; }
 export interface DBLesson { id: string; project_id: string; description: string; category: string; impact: string; created_at: string; }
 export interface DBExpense { id: string; project_id: string; date: string; category: string; amount: number; description: string; created_at: string; }
-export interface DBTeamMember { id: string; name: string; role: string; email?: string; }
+export interface DBTeamMember { id: string; name: string; role: string; email?: string; capacity_id?: string; }
 export interface DBCapacityAssignment { id: string; member_id: string; user_email?: string; type: any; project_id: string | null; date?: string; week_start?: string; hours: number; observations?: string; }
 export interface DBDocSection { id: string; title: string; parent_id: string | null; order: number; }
 export interface DBDocLink { id: string; section_id: string; title: string; url: string; description?: string; created_at: string; }
