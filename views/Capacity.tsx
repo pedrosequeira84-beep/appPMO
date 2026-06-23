@@ -988,7 +988,10 @@ export const CapacityView: React.FC = () => {
                                                         <div className="flex items-center justify-between group/label">
                                                             <div className="flex items-center gap-3 overflow-hidden">
                                                                 <div className={`w-2 h-2 rounded-full shrink-0 ${key.startsWith('project') ? 'bg-indigo-400' : 'bg-amber-400'} shadow-sm shadow-indigo-100`}></div>
-                                                                <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate max-w-[200px] tracking-tight">
+                                                                <div
+                                                                    className="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate max-w-[200px] tracking-tight cursor-help"
+                                                                    title={getActivityLabel(key)}
+                                                                >
                                                                     {getActivityLabel(key)}
                                                                 </div>
                                                             </div>
