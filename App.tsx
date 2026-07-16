@@ -15,6 +15,7 @@ import { HitosView } from './views/Hitos';
 import { ProfileView } from './views/Profile';
 import { DocumentationView } from './views/Documentation';
 import { TeamManagementView } from './views/TeamManagement';
+import { CierreFiscalView } from './views/CierreFiscal';
 
 const MainLayout: React.FC = () => {
     const { currentView, user } = useApp();
@@ -23,6 +24,8 @@ const MainLayout: React.FC = () => {
     if (!user) {
         return <AuthView />;
     }
+
+    const isAdmin = user?.email?.toLowerCase() === 'pedro.sequeira@bghtechpartner.com';
 
     const renderView = () => {
         switch (currentView) {
@@ -38,6 +41,7 @@ const MainLayout: React.FC = () => {
             case 'documentation': return <DocumentationView />;
             case 'perfil': return <ProfileView />;
             case 'team-management': return <TeamManagementView />;
+            case 'cierre-fiscal': return isAdmin ? <CierreFiscalView /> : <DashboardView />;
             default: return <DashboardView />;
         }
     };

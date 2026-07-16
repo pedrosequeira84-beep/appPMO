@@ -66,7 +66,7 @@ export const CostsView: React.FC = () => {
                 if (!objeto.match(/^TP-AR-\d+-\d+$/i)) continue;
                 
                 const parts = objeto.split('-');
-                const suffix = parts[parts.length - 1];
+                const suffix = parseInt(parts[parts.length - 1], 10).toString();
                 if (!SAP_SUFFIX_MAP[suffix]) continue;
                 
                 let amount = typeof valRaw === 'number' ? valRaw : parseFloat(String(valRaw || '0').replace(/\./g, '').replace(',', '.'));
@@ -80,7 +80,7 @@ export const CostsView: React.FC = () => {
             const entries: SAPEntry[] = [];
             for (const [pepCode, amount] of Object.entries(pepTotals)) {
                 const parts = pepCode.split('-');
-                const suffix = parts[parts.length - 1];
+                const suffix = parseInt(parts[parts.length - 1], 10).toString();
                 const basePep = parts.slice(0, -1).join('-'); // e.g. TP-AR-19673
                 const category = SAP_SUFFIX_MAP[suffix];
                 const project = projects.find(p =>

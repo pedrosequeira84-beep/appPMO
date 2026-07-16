@@ -229,7 +229,7 @@ export interface DashboardFilters {
   segment: string | null;
 }
 
-export type ViewName = 'dashboard-pmo' | 'dashboard-ejecutivo' | 'alta-proyecto' | 'gastos' | 'hitos' | 'capacity' | 'riesgos' | 'cambios' | 'lecciones' | 'documentation' | 'perfil' | 'team-management';
+export type ViewName = 'dashboard-pmo' | 'dashboard-ejecutivo' | 'alta-proyecto' | 'gastos' | 'hitos' | 'capacity' | 'riesgos' | 'cambios' | 'lecciones' | 'documentation' | 'perfil' | 'team-management' | 'cierre-fiscal';
 
 export const COST_CATEGORIES = [
   "1-Costos Comerciales",

@@ -60,6 +60,13 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
                     <span>Dashboard Ejecutivo</span>
                   </button>
                 </li>
+                {isAdmin && (
+                  <li>
+                    <button onClick={() => handleNav('cierre-fiscal')} className={subNavItemClass('cierre-fiscal')}>
+                      <span>Reportes Cierre Fiscal</span>
+                    </button>
+                  </li>
+                )}
               </ul>
             )}
           </li>
