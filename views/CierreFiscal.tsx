@@ -266,18 +266,27 @@ export const CierreFiscalView: React.FC = () => {
   const billing = useMemo(() => {
     const perProject = selectedProjects.map(p => {
       const ms = milestones.filter(m => m.projectId === p.id && !m.parentId);
-      const expected = ms.reduce((s, m) => s + (m.amount || 0), 0);
-      const received = ms.reduce((s, m) => s + (m.receivedAmount || 0), 0);
+      
+      // Filtrar hitos cuya fecha caiga dentro del semestre en análisis
+      const msInPeriod = ms.filter(m => {
+        const mDate = safeDate(m.date);
+        return !!(mDate && mDate >= periodStart && mDate <= periodEnd);
+      });
+
+      const expected = msInPeriod.reduce((s, m) => s + (m.amount || 0), 0);
+      const received = msInPeriod.reduce((s, m) => s + (m.receivedAmount || 0), 0);
       const pending = expected - received;
       const pct = expected > 0 ? (received / expected) * 100 : 0;
+
       return { project: p, expected, received, pending, pct };
     }).sort((a, b) => b.pct - a.pct);
+
     const totalExpected = perProject.reduce((s, d) => s + d.expected, 0);
     const totalReceived = perProject.reduce((s, d) => s + d.received, 0);
     const totalPending = totalExpected - totalReceived;
     const totalPct = totalExpected > 0 ? (totalReceived / totalExpected) * 100 : 0;
     return { perProject, totalExpected, totalReceived, totalPending, totalPct };
-  }, [selectedProjects, milestones]);
+  }, [selectedProjects, milestones, periodStart, periodEnd]);
 
   // ─── Lógica del Timeline (Gantt) ──────────────────────────────────────────
   const BAR_GRADIENTS = [
@@ -402,22 +411,39 @@ export const CierreFiscalView: React.FC = () => {
     const rows = mapped.map(p => {
       const startMs = p.start.getTime();
       const endMs = p.end.getTime();
+      const theoMs = p.theo ? p.theo.getTime() : endMs;
+      
       const left = Math.max(0, ((startMs - timelineStart) / totalDuration) * 100);
-      const rawWidth = ((endMs - startMs) / totalDuration) * 100;
-      const width = Math.max(1.5, Math.min(100 - left, rawWidth));
+      
+      const desvioDays = Math.round((endMs - theoMs) / (24 * 60 * 60 * 1000));
+      const hasDesvio = desvioDays > 0;
+
+      let widthPlan = 0;
+      let leftDesvio = 0;
+      let widthDesvio = 0;
+
+      if (hasDesvio) {
+        widthPlan = Math.max(1.5, ((theoMs - startMs) / totalDuration) * 100);
+        leftDesvio = ((theoMs - timelineStart) / totalDuration) * 100;
+        widthDesvio = Math.max(1.5, ((endMs - theoMs) / totalDuration) * 100);
+      } else {
+        const rawWidth = ((endMs - startMs) / totalDuration) * 100;
+        widthPlan = Math.max(1.5, Math.min(100 - left, rawWidth));
+      }
 
       let relativeTheoLeft: number | null = null;
-      if (p.theo && p.theo.getTime() !== endMs) {
-        const theoMs = p.theo.getTime();
-        if (theoMs >= startMs && theoMs <= endMs) {
-          relativeTheoLeft = ((theoMs - startMs) / (endMs - startMs)) * 100;
-        }
+      if (hasDesvio) {
+        relativeTheoLeft = (widthPlan / (widthPlan + widthDesvio)) * 100;
       }
 
       return {
         ...p,
         left,
-        width,
+        widthPlan,
+        hasDesvio,
+        leftDesvio,
+        widthDesvio,
+        desvioDays,
         relativeTheoLeft
       };
     });
@@ -788,12 +814,13 @@ export const CierreFiscalView: React.FC = () => {
 
                             {/* Columna Derecha: Timeline Bar */}
                             <div className="flex-1 min-w-[630px] relative h-12 flex items-center px-4 z-10">
+                              {/* Barra Completa clásica */}
                               <div
                                 className={`absolute h-8 rounded-lg bg-gradient-to-r ${gradient} text-white flex items-center justify-center px-3 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 select-none cursor-pointer z-10`}
-                                style={{ left: `${row.left}%`, width: `${row.width}%` }}
-                                title={`${labelText} (${row.opportunityNumber})\nInicio: ${startStr}\nFin: ${row.realEndDate ? formatDate(row.realEndDate) : 'En curso'}`}
+                                style={{ left: `${row.left}%`, width: `${row.widthPlan + row.widthDesvio}%` }}
+                                title={`${labelText} (${row.opportunityNumber})\nInicio: ${startStr}\nFin Real/Actual: ${row.realEndDate ? formatDate(row.realEndDate) : 'En curso'}`}
                               >
-                                {!isTooNarrow ? (
+                                {((timelineBaseWidth * (row.widthPlan + row.widthDesvio)) / 100) > (labelText.length * 7.2 + 24) ? (
                                   <span className="text-[11px] font-black truncate tracking-wide px-1 drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.85)]">
                                     {labelText}
                                   </span>
@@ -808,7 +835,7 @@ export const CierreFiscalView: React.FC = () => {
                                     className="absolute top-0 bottom-0 w-0 border-l border-dashed border-white/70 z-15 pointer-events-none"
                                     style={{ left: `${row.relativeTheoLeft}%` }}
                                   >
-                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-yellow-300 rotate-45 border border-white" />
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-yellow-300 rotate-45 border border-white" title={`Fecha Planificada: ${row.theo ? formatDate(row.theo.toISOString().split('T')[0]) : ''}`} />
                                   </div>
                                 )}
                               </div>
@@ -824,37 +851,143 @@ export const CierreFiscalView: React.FC = () => {
           </section>
 
           {/* ═══════════════════════════════════════════════
-              BLOQUE 3 — Gráfico: Desvío Temporal (Días)
+              BLOQUE 3 — Cronograma de Desvíos Temporales
           ════════════════════════════════════════════════ */}
           <section>
-            <SectionTitle label="Desvío Temporal por Proyecto" sub="Días de retraso respecto a la fecha de cierre original · Ordenado de mayor a menor" />
-            <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-              <p className="text-[11px] text-slate-400 mb-4 italic">
-                Cálculo: Fecha fin actual (real o teórica vigente) − Fecha fin original planificada (primer registro del historial). Rojo = retraso · Verde = adelanto.
+            <SectionTitle label="Cronograma de Desvíos Temporales por Proyecto" sub="Línea de tiempo detallada con desglose de la duración planificada original vs. desvío (atraso) real en rojo" />
+            <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs mb-4">
+              <p className="text-[11px] text-slate-400 mb-5 italic">
+                Interpretación: La barra de color representa la duración planificada original. La extensión roja a la derecha representa el desvío/retraso real acumulado (+días).
               </p>
-              <div style={{ height: chartH }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={desvioTemporalData} margin={{ top: 0, right: 90, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}d`} />
-                    <YAxis type="category" dataKey="name" width={250} tick={{ fontSize: 10, fontWeight: 700 }} />
-                    <Tooltip
-                      cursor={{ fill: 'rgba(99,102,241,0.06)' }}
-                      formatter={(v: any, _: any, p: any) => [`${v} días`, p.payload.fullName]}
-                      contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                    />
-                    <Bar dataKey="days" radius={[0, 5, 5, 0]} maxBarSize={36}>
-                      {desvioTemporalData.map((e, i) => (
-                        <Cell key={i} fill={e.days > 0 ? '#f43f5e' : '#10b981'} />
-                      ))}
-                      <LabelList
-                        dataKey="days"
-                        content={props => renderCustomLabel(props, (v) => `${v > 0 ? '+' : ''}${v} d`)}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+
+              {timelineData.rows.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-400">
+                  Seleccioná proyectos para visualizar la línea de desvíos.
+                </div>
+              ) : (
+                <div className="w-full overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-950 shadow-inner">
+                  <div className="min-w-[950px] relative font-sans">
+                    {/* Años Fiscales */}
+                    <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm font-black text-slate-800 dark:text-white">
+                      <div className="sticky left-0 w-[340px] min-w-[340px] bg-slate-50 dark:bg-slate-900 z-30 border-r-2 border-slate-300 dark:border-slate-700 py-2.5 px-3.5 flex items-center justify-between shrink-0 select-none">
+                        <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Proyecto</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">Fechas</span>
+                      </div>
+                      <div className="flex-1 flex min-w-[630px]">
+                        {timelineData.fyHeaders.map((header, idx) => (
+                          <div
+                            key={idx}
+                            className="py-2.5 text-center border-r-2 border-slate-300 dark:border-slate-700 last:border-r-0 tracking-wide font-black text-slate-900 dark:text-slate-100 text-[13px]"
+                            style={{ width: `${header.width}%`, flexGrow: 0, flexShrink: 0 }}
+                          >
+                            <i className="far fa-clock mr-1 text-indigo-600 dark:text-indigo-400 font-bold"></i>
+                            {header.label}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Semestres */}
+                    <div className="flex border-b border-slate-200 dark:border-slate-850 bg-slate-100/70 dark:bg-slate-900/90 text-[11.5px] font-black text-slate-700 dark:text-slate-350 uppercase tracking-widest">
+                      <div className="sticky left-0 w-[340px] min-w-[340px] bg-slate-100/70 dark:bg-slate-900/90 z-30 border-r-2 border-slate-300 dark:border-slate-700 shrink-0" />
+                      <div className="flex-1 flex min-w-[630px]">
+                        {timelineData.periods.map((period, idx) => {
+                          const isActive = period.fy === selectedFY && period.half === selectedHalf;
+                          return (
+                            <div
+                              key={idx}
+                              className={`py-1.5 text-center border-r-2 border-slate-300 dark:border-slate-700 last:border-r-0 font-black flex items-center justify-center gap-1.5 transition-colors ${
+                                isActive 
+                                ? 'text-indigo-750 dark:text-indigo-300 bg-indigo-100/70 dark:bg-indigo-900/40' 
+                                : 'text-slate-755 dark:text-slate-300'
+                              }`}
+                              style={{ width: `${period.width}%`, flexGrow: 0, flexShrink: 0 }}
+                            >
+                              <span>{period.half}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Contenido / Filas */}
+                    <div className="relative min-h-[100px] flex flex-col">
+                      <div className="absolute inset-0 flex pointer-events-none z-0">
+                        <div className="w-[340px] min-w-[340px] border-r-2 border-slate-300 dark:border-slate-700 shrink-0 bg-transparent" />
+                        <div className="flex-1 flex min-w-[630px] relative h-full">
+                          {timelineData.periods.map((period, idx) => (
+                            <div
+                              key={idx}
+                              className="h-full border-r-2 border-slate-300 dark:border-slate-700 last:border-r-0"
+                              style={{ width: `${period.width}%`, flexGrow: 0, flexShrink: 0 }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="relative z-10 flex flex-col divide-y divide-slate-150 dark:divide-slate-850/60 bg-transparent">
+                        {timelineData.rows.map((row, idx) => {
+                          const startStr = formatDate(row.start.toISOString().split('T')[0]);
+                          const labelText = row.clientName ? `${row.clientName} - ${row.name}` : row.name;
+                          const gradient = BAR_GRADIENTS[idx % BAR_GRADIENTS.length];
+                          const timelineBaseWidth = 800;
+                          
+                          return (
+                            <div
+                              key={row.id}
+                              className="flex items-center hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors group relative"
+                            >
+                              {/* Izquierda Sticky */}
+                              <div className="sticky left-0 w-[340px] min-w-[340px] bg-white dark:bg-slate-950 px-3.5 py-2.5 z-20 border-r-2 border-slate-300 dark:border-slate-700 flex flex-col justify-center gap-1 shadow-[4px_0_8px_rgba(0,0,0,0.03)] dark:shadow-[4px_0_8px_rgba(0,0,0,0.5)] shrink-0">
+                                <span className="font-black text-[12px] text-slate-950 dark:text-white tracking-wide truncate" title={labelText}>
+                                  {labelText}
+                                </span>
+                                <div className="flex flex-nowrap items-center gap-1 text-[9.5px] whitespace-nowrap overflow-x-hidden">
+                                  <span className="bg-emerald-100/90 dark:bg-emerald-950/50 text-emerald-950 dark:text-emerald-250 px-1.5 py-0.5 rounded-md font-black border border-emerald-300/80 dark:border-emerald-800/60 shadow-xs">
+                                    Ini: {startStr}
+                                  </span>
+                                  <span className="bg-amber-100/90 dark:bg-amber-950/50 text-amber-950 dark:text-amber-250 px-1.5 py-0.5 rounded-md font-black border border-amber-300/80 dark:border-amber-800/60 shadow-xs">
+                                    Plan: {row.theo ? formatDate(row.theo.toISOString().split('T')[0]) : 'S/D'}
+                                  </span>
+                                  <span className={`px-1.5 py-0.5 rounded-md font-black shadow-xs ${row.hasDesvio ? 'bg-red-100 dark:bg-red-950 text-red-750 dark:text-red-300 border border-red-300 dark:border-red-800' : 'bg-sky-100/90 dark:bg-sky-950/50 text-sky-950 dark:text-sky-250 border border-sky-300/80'}`}>
+                                    {row.hasDesvio ? `Fin: ${row.realEndDate ? formatDate(row.realEndDate) : 'En curso'} (+${row.desvioDays}d)` : `Fin: ${row.realEndDate ? formatDate(row.realEndDate) : 'En curso'}`}
+                                  </span>
+                                </div>
+                              </div>
+                              {/* Derecha: Barra Planificada + Barra de Desvío */}
+                              <div className="flex-1 min-w-[630px] relative h-12 flex items-center px-4 z-10">
+                                {/* Barra Planificada */}
+                                <div
+                                  className={`absolute h-8 rounded-lg bg-gradient-to-r ${gradient} text-white flex items-center justify-center px-2.5 shadow-sm hover:scale-[1.01] hover:shadow-md transition-all duration-200 select-none cursor-pointer z-10`}
+                                  style={{ left: `${row.left}%`, width: `${row.widthPlan}%` }}
+                                  title={`${labelText}\nInicio: ${startStr}\nFin Planificado: ${row.theo ? formatDate(row.theo.toISOString().split('T')[0]) : ''}`}
+                                >
+                                  <span className="text-[11px] font-black truncate tracking-wide drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.85)] w-full text-center">
+                                    {labelText}
+                                  </span>
+                                </div>
+
+                                {/* Barra de Desvío (si aplica) */}
+                                {row.hasDesvio && (
+                                  <div
+                                    className="absolute h-8 rounded-lg bg-gradient-to-r from-red-500/80 to-rose-600/90 text-white flex items-center justify-center border border-red-500/40 shadow-xs z-9 cursor-pointer select-none"
+                                    style={{ left: `${row.leftDesvio}%`, width: `${row.widthDesvio}%` }}
+                                    title={`Desvío Temporal: +${row.desvioDays} días`}
+                                  >
+                                    <span className="absolute left-[calc(100%+6px)] top-1/2 -translate-y-1/2 text-[10px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-md border border-rose-500 shadow-sm whitespace-nowrap z-25">
+                                      +{row.desvioDays}d
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
