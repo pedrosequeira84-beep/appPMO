@@ -206,13 +206,18 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
 
     // Per month totals: key = "YYYY-MM" (calendar month)
     const monthStats = React.useMemo(() => {
-        const map: Record<string, { total: number; received: number; items: Milestone[] }> = {};
+        const map: Record<string, { usdTotal: number; usdReceived: number; arsTotal: number; arsReceived: number; items: Milestone[] }> = {};
         milestones.forEach(m => {
             const d = new Date(m.date);
             const key = `${d.getFullYear()}-${d.getMonth()}`;
-            if (!map[key]) map[key] = { total: 0, received: 0, items: [] };
-            map[key].total += m.amount;
-            map[key].received += m.receivedAmount;
+            if (!map[key]) map[key] = { usdTotal: 0, usdReceived: 0, arsTotal: 0, arsReceived: 0, items: [] };
+            if (m.currency === 'ARS') {
+                map[key].arsTotal += m.amount;
+                map[key].arsReceived += m.receivedAmount;
+            } else {
+                map[key].usdTotal += m.amount;
+                map[key].usdReceived += m.receivedAmount;
+            }
             map[key].items.push(m);
         });
         return map;
@@ -226,13 +231,20 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                 const fyLabel = `${fy}/${String(fy + 1).slice(2)}`;
 
                 // Quarter totals for this FY
-                const quarterStats: Record<string, { total: number; received: number }> = { Q1: { total: 0, received: 0 }, Q2: { total: 0, received: 0 }, Q3: { total: 0, received: 0 }, Q4: { total: 0, received: 0 } };
+                const quarterStats: Record<string, { usdTotal: number; usdReceived: number; arsTotal: number; arsReceived: number }> = {
+                    Q1: { usdTotal: 0, usdReceived: 0, arsTotal: 0, arsReceived: 0 },
+                    Q2: { usdTotal: 0, usdReceived: 0, arsTotal: 0, arsReceived: 0 },
+                    Q3: { usdTotal: 0, usdReceived: 0, arsTotal: 0, arsReceived: 0 },
+                    Q4: { usdTotal: 0, usdReceived: 0, arsTotal: 0, arsReceived: 0 }
+                };
                 FISCAL_MONTHS.forEach(fm => {
                     const calYear = fm.month >= 6 ? fy : fy + 1;
                     const key = `${calYear}-${fm.month}`;
                     if (monthStats[key]) {
-                        quarterStats[fm.q].total += monthStats[key].total;
-                        quarterStats[fm.q].received += monthStats[key].received;
+                        quarterStats[fm.q].usdTotal += monthStats[key].usdTotal;
+                        quarterStats[fm.q].usdReceived += monthStats[key].usdReceived;
+                        quarterStats[fm.q].arsTotal += monthStats[key].arsTotal;
+                        quarterStats[fm.q].arsReceived += monthStats[key].arsReceived;
                     }
                 });
 
@@ -254,7 +266,8 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                             {['Q1', 'Q2', 'Q3', 'Q4'].map(q => {
                                 const qc = QUARTER_COLORS[q];
                                 const qStats = quarterStats[q];
-                                const qPct = qStats.total > 0 ? (qStats.received / qStats.total) * 100 : 0;
+                                const hasUsd = qStats.usdTotal > 0;
+                                const hasArs = qStats.arsTotal > 0;
                                 const qMonths = FISCAL_MONTHS.filter(fm => fm.q === q);
 
                                 return (
@@ -271,12 +284,20 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                                             </div>
                                             <div className="text-right shrink-0">
                                                 <div className="text-[9px] font-black text-gray-400 uppercase">Total</div>
-                                                <div className={`text-xs font-black ${qc.text}`}>${qStats.total.toLocaleString()}</div>
-                                                <div className="text-[9px] text-emerald-600 font-bold">✓ ${qStats.received.toLocaleString()}</div>
-                                                {qStats.total > 0 && (
-                                                    <div className="mt-1 w-16 bg-gray-200 dark:bg-slate-700 rounded-full h-1 ml-auto">
-                                                        <div className="bg-emerald-500 h-1 rounded-full transition-all" style={{ width: `${Math.min(qPct, 100)}%` }}></div>
-                                                    </div>
+                                                {hasUsd && (
+                                                    <>
+                                                        <div className={`text-xs font-black ${qc.text}`}>USD {qStats.usdTotal.toLocaleString()}</div>
+                                                        <div className="text-[9px] text-emerald-600 font-bold">✓ USD {qStats.usdReceived.toLocaleString()}</div>
+                                                    </>
+                                                )}
+                                                {hasArs && (
+                                                    <>
+                                                        <div className={`text-xs font-black ${qc.text}`}>ARS {qStats.arsTotal.toLocaleString()}</div>
+                                                        <div className="text-[9px] text-emerald-600 font-bold">✓ ARS {qStats.arsReceived.toLocaleString()}</div>
+                                                    </>
+                                                )}
+                                                {!hasUsd && !hasArs && (
+                                                    <div className={`text-xs font-black ${qc.text}`}>USD 0</div>
                                                 )}
                                             </div>
                                         </div>
@@ -286,7 +307,7 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                                             {qMonths.map(fm => {
                                                 const calYear = fm.month >= 6 ? fy : fy + 1;
                                                 const key = `${calYear}-${fm.month}`;
-                                                const mStat = monthStats[key] || { total: 0, received: 0, items: [] };
+                                                const mStat = monthStats[key] || { usdTotal: 0, usdReceived: 0, arsTotal: 0, arsReceived: 0, items: [] };
                                                 const isCurrentMonth = today.getFullYear() === calYear && today.getMonth() === fm.month;
 
                                                 return (
@@ -297,10 +318,16 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                                                                 {fm.label}
                                                                 {isCurrentMonth && <span className="ml-1 text-[8px] bg-emerald-500 text-white px-1 rounded-full">HOY</span>}
                                                             </div>
-                                                            {mStat.total > 0 && (
+                                                            {mStat.usdTotal > 0 && (
                                                                 <div className="mt-1 text-center">
-                                                                    <div className="text-[9px] font-black text-gray-700 dark:text-gray-300">${(mStat.total / 1000).toFixed(0)}K</div>
-                                                                    <div className="text-[8px] text-emerald-600 font-bold">✓${(mStat.received / 1000).toFixed(0)}K</div>
+                                                                    <div className="text-[9px] font-black text-gray-700 dark:text-gray-300">USD {(mStat.usdTotal / 1000).toFixed(0)}K</div>
+                                                                    <div className="text-[8px] text-emerald-600 font-bold">✓USD {(mStat.usdReceived / 1000).toFixed(0)}K</div>
+                                                                </div>
+                                                            )}
+                                                            {mStat.arsTotal > 0 && (
+                                                                <div className="mt-1 text-center">
+                                                                    <div className="text-[9px] font-black text-gray-700 dark:text-gray-300">ARS {(mStat.arsTotal / 1000).toFixed(0)}K</div>
+                                                                    <div className="text-[8px] text-emerald-600 font-bold">✓ARS {(mStat.arsReceived / 1000).toFixed(0)}K</div>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -337,7 +364,7 @@ const MilestoneTimeline: React.FC<TimelineProps> = ({ milestones, projects }) =>
                                                                         {/* Mini label */}
                                                                         <div className="flex-1 min-w-0">
                                                                             <div className={`text-[8px] font-black leading-tight truncate ${isCobrado ? 'text-emerald-700 dark:text-emerald-400' : isParcial ? 'text-blue-700 dark:text-blue-400' : 'text-amber-700 dark:text-amber-400'}`}>
-                                                                                ${(m.amount / 1000).toFixed(0)}K
+                                                                                {m.currency || 'USD'} {(m.amount / 1000).toFixed(0)}K
                                                                             </div>
                                                                             <div className="text-[7px] text-gray-400 truncate leading-tight">{m.description.slice(0, 20)}</div>
                                                                         </div>
@@ -720,9 +747,19 @@ export const HitosView: React.FC = () => {
 
     // Resumen General
     const stats = React.useMemo(() => {
-        const total = filteredMilestones.reduce((acc, m) => acc + m.amount, 0);
-        const cobrado = filteredMilestones.reduce((acc, m) => acc + m.receivedAmount, 0);
-        return { total, cobrado, pendiente: total - cobrado };
+        const usdMs = filteredMilestones.filter(m => m.currency === 'USD' || !m.currency);
+        const arsMs = filteredMilestones.filter(m => m.currency === 'ARS');
+        
+        const usdTotal = usdMs.reduce((acc, m) => acc + m.amount, 0);
+        const usdCobrado = usdMs.reduce((acc, m) => acc + m.receivedAmount, 0);
+        
+        const arsTotal = arsMs.reduce((acc, m) => acc + m.amount, 0);
+        const arsCobrado = arsMs.reduce((acc, m) => acc + m.receivedAmount, 0);
+        
+        return {
+            usd: { total: usdTotal, cobrado: usdCobrado, pendiente: usdTotal - usdCobrado },
+            ars: { total: arsTotal, cobrado: arsCobrado, pendiente: arsTotal - arsCobrado }
+        };
     }, [filteredMilestones]);
 
     return (
@@ -754,21 +791,35 @@ export const HitosView: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm">
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 block">Monto Total Estimado</span>
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-gray-900 dark:text-white">USD {stats.total.toLocaleString()}</span>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-3xl font-black text-gray-900 dark:text-white">USD {stats.usd.total.toLocaleString()}</span>
+                        {stats.ars.total > 0 && (
+                            <span className="text-xl font-bold text-gray-500 dark:text-gray-400">ARS {stats.ars.total.toLocaleString()}</span>
+                        )}
                     </div>
                 </div>
                 <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm">
                     <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-3 block">Monto Recepcionado</span>
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-emerald-600">USD {stats.cobrado.toLocaleString()}</span>
-                        <span className="text-xs font-bold text-emerald-500/70">({stats.total > 0 ? Math.round((stats.cobrado / stats.total) * 100) : 0}%)</span>
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-black text-emerald-600">USD {stats.usd.cobrado.toLocaleString()}</span>
+                            <span className="text-xs font-bold text-emerald-500/70">({stats.usd.total > 0 ? Math.round((stats.usd.cobrado / stats.usd.total) * 100) : 0}%)</span>
+                        </div>
+                        {stats.ars.total > 0 && (
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-xl font-bold text-emerald-500/80">ARS {stats.ars.cobrado.toLocaleString()}</span>
+                                <span className="text-xs font-bold text-emerald-500/60">({stats.ars.total > 0 ? Math.round((stats.ars.cobrado / stats.ars.total) * 100) : 0}%)</span>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border border-gray-100 dark:border-dark-border shadow-sm">
                     <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em] mb-3 block">Monto Pendiente</span>
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-amber-600">USD {stats.pendiente.toLocaleString()}</span>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-3xl font-black text-amber-600">USD {stats.usd.pendiente.toLocaleString()}</span>
+                        {stats.ars.total > 0 && (
+                            <span className="text-xl font-bold text-amber-500/80">ARS {stats.ars.pendiente.toLocaleString()}</span>
+                        )}
                     </div>
                 </div>
             </div>
@@ -824,9 +875,15 @@ export const HitosView: React.FC = () => {
                 <div className="space-y-14">
                     {sortedProjectsWithMilestones.map((project) => {
                         const projHitos = milestonesByProject[project.id] || [];
-                        const projTotal = projHitos.reduce((s, h) => s + h.amount, 0);
-                        const projReceived = projHitos.reduce((s, h) => s + h.receivedAmount, 0);
-                        const projPct = projTotal > 0 ? (projReceived / projTotal) * 100 : 0;
+                        const projUSDTotal = projHitos.filter(h => h.currency === 'USD' || !h.currency).reduce((s, h) => s + h.amount, 0);
+                        const projUSDReceived = projHitos.filter(h => h.currency === 'USD' || !h.currency).reduce((s, h) => s + h.receivedAmount, 0);
+                        
+                        const projARSTotal = projHitos.filter(h => h.currency === 'ARS').reduce((s, h) => s + h.amount, 0);
+                        const projARSReceived = projHitos.filter(h => h.currency === 'ARS').reduce((s, h) => s + h.receivedAmount, 0);
+
+                        const usdPct = projUSDTotal > 0 ? (projUSDReceived / projUSDTotal) * 100 : 0;
+                        const arsPct = projARSTotal > 0 ? (projARSReceived / projARSTotal) * 100 : 0;
+                        const projPct = (projUSDTotal > 0 && projARSTotal > 0) ? (usdPct + arsPct) / 2 : (projUSDTotal > 0 ? usdPct : arsPct);
 
                         return (
                             <div key={project.id} className="space-y-6 bg-white dark:bg-dark-card rounded-3xl p-6 border border-gray-100 dark:border-dark-border shadow-sm transition-all hover:shadow-md">
@@ -867,7 +924,15 @@ export const HitosView: React.FC = () => {
                                         </div>
                                         <div className="text-right border-l pl-6 dark:border-slate-800">
                                             <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Presupuesto</p>
-                                            <p className="text-lg font-black dark:text-white">USD {projTotal.toLocaleString()}</p>
+                                            {projUSDTotal > 0 && (
+                                                <p className="text-lg font-black dark:text-white">USD {projUSDTotal.toLocaleString()}</p>
+                                            )}
+                                            {projARSTotal > 0 && (
+                                                <p className="text-lg font-black dark:text-white">ARS {projARSTotal.toLocaleString()}</p>
+                                            )}
+                                            {projUSDTotal === 0 && projARSTotal === 0 && (
+                                                <p className="text-lg font-black dark:text-white">USD 0</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -955,6 +1020,19 @@ export const HitosView: React.FC = () => {
                             <div className="md:col-span-2">
                                 <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 ml-1">Descripción del Hito *</label>
                                 <input type="text" className="w-full h-14 px-6 rounded-2xl bg-gray-50 dark:bg-slate-800 border-2 border-transparent focus:border-emerald-500 transition-all font-medium text-sm" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Ej: Pago Inicial, Entrega de HW, Hito 1..." />
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 ml-1">Moneda *</label>
+                                <select 
+                                    className="w-full h-14 px-6 rounded-2xl bg-gray-50 dark:bg-slate-800 border-2 border-transparent focus:border-emerald-500 transition-all font-bold text-sm"
+                                    value={formData.currency || 'USD'}
+                                    onChange={e => setFormData({ ...formData, currency: e.target.value })}
+                                    disabled={!!formData.parentId}
+                                >
+                                    <option value="USD">USD (Dólares)</option>
+                                    <option value="ARS">ARS (Pesos Argentinos)</option>
+                                </select>
                             </div>
 
                             <div>

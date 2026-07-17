@@ -99,11 +99,12 @@ export const DashboardView: React.FC = () => {
 
     // 4. Milestone Status
     const milestoneStatusData = useMemo(() => {
-        const invoicedAmount = milestones.filter(m => m.isReceived).reduce((s, m) => s + (m.amount || 0), 0);
-        const pendingAmount = milestones.filter(m => !m.isReceived).reduce((s, m) => s + (m.amount || 0), 0);
+        const usdMilestones = milestones.filter(m => m.currency === 'USD' || !m.currency);
+        const invoicedAmount = usdMilestones.filter(m => m.isReceived).reduce((s, m) => s + (m.amount || 0), 0);
+        const pendingAmount = usdMilestones.filter(m => !m.isReceived).reduce((s, m) => s + (m.amount || 0), 0);
         return [
-            { name: 'Facturado', value: invoicedAmount },
-            { name: 'Pendiente', value: pendingAmount }
+            { name: 'Facturado (USD)', value: invoicedAmount },
+            { name: 'Pendiente (USD)', value: pendingAmount }
         ];
     }, [milestones]);
     const MILESTONE_COLORS = ['#10b981', '#f59e0b'];

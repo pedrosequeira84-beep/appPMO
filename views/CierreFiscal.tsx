@@ -273,19 +273,36 @@ export const CierreFiscalView: React.FC = () => {
         return !!(mDate && mDate >= periodStart && mDate <= periodEnd);
       });
 
-      const expected = msInPeriod.reduce((s, m) => s + (m.amount || 0), 0);
-      const received = msInPeriod.reduce((s, m) => s + (m.receivedAmount || 0), 0);
-      const pending = expected - received;
-      const pct = expected > 0 ? (received / expected) * 100 : 0;
+      const expectedUSD = msInPeriod.filter(m => m.currency === 'USD' || !m.currency).reduce((s, m) => s + (m.amount || 0), 0);
+      const receivedUSD = msInPeriod.filter(m => m.currency === 'USD' || !m.currency).reduce((s, m) => s + (m.receivedAmount || 0), 0);
+      const pendingUSD = expectedUSD - receivedUSD;
+      
+      const expectedARS = msInPeriod.filter(m => m.currency === 'ARS').reduce((s, m) => s + (m.amount || 0), 0);
+      const receivedARS = msInPeriod.filter(m => m.currency === 'ARS').reduce((s, m) => s + (m.receivedAmount || 0), 0);
+      const pendingARS = expectedARS - receivedARS;
 
-      return { project: p, expected, received, pending, pct };
+      const usdPct = expectedUSD > 0 ? (receivedUSD / expectedUSD) * 100 : 0;
+      const arsPct = expectedARS > 0 ? (receivedARS / expectedARS) * 100 : 0;
+      const pct = (expectedUSD > 0 && expectedARS > 0) ? (usdPct + arsPct) / 2 : (expectedUSD > 0 ? usdPct : arsPct);
+
+      return { project: p, expectedUSD, receivedUSD, pendingUSD, expectedARS, receivedARS, pendingARS, pct };
     }).sort((a, b) => b.pct - a.pct);
 
-    const totalExpected = perProject.reduce((s, d) => s + d.expected, 0);
-    const totalReceived = perProject.reduce((s, d) => s + d.received, 0);
-    const totalPending = totalExpected - totalReceived;
-    const totalPct = totalExpected > 0 ? (totalReceived / totalExpected) * 100 : 0;
-    return { perProject, totalExpected, totalReceived, totalPending, totalPct };
+    const totalExpectedUSD = perProject.reduce((s, d) => s + d.expectedUSD, 0);
+    const totalReceivedUSD = perProject.reduce((s, d) => s + d.receivedUSD, 0);
+    const totalPendingUSD = totalExpectedUSD - totalReceivedUSD;
+    const totalPctUSD = totalExpectedUSD > 0 ? (totalReceivedUSD / totalExpectedUSD) * 100 : 0;
+
+    const totalExpectedARS = perProject.reduce((s, d) => s + d.expectedARS, 0);
+    const totalReceivedARS = perProject.reduce((s, d) => s + d.receivedARS, 0);
+    const totalPendingARS = totalExpectedARS - totalReceivedARS;
+    const totalPctARS = totalExpectedARS > 0 ? (totalReceivedARS / totalExpectedARS) * 100 : 0;
+
+    return { 
+      perProject, 
+      totalExpectedUSD, totalReceivedUSD, totalPendingUSD, totalPctUSD,
+      totalExpectedARS, totalReceivedARS, totalPendingARS, totalPctARS
+    };
   }, [selectedProjects, milestones, periodStart, periodEnd]);
 
   // ─── Lógica del Timeline (Gantt) ──────────────────────────────────────────
@@ -625,33 +642,93 @@ export const CierreFiscalView: React.FC = () => {
             <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs mb-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-6">
                 {[
-                  { label: 'Monto Total Esperado', val: `USD ${fmtNum(billing.totalExpected)}`, cls: 'text-slate-800 dark:text-white' },
-                  { label: 'Monto Recepcionado', val: `USD ${fmtNum(billing.totalReceived)}`, cls: 'text-emerald-600 dark:text-emerald-400' },
-                  { label: 'Pendiente de Recepción', val: `USD ${fmtNum(billing.totalPending)}`, cls: 'text-amber-600 dark:text-amber-400' },
-                  { label: '% Recepcionado Global', val: `${Math.round(billing.totalPct)}%`, cls: billing.totalPct >= 80 ? 'text-emerald-600' : billing.totalPct >= 50 ? 'text-amber-600' : 'text-red-500' },
+                  { 
+                    label: 'Monto Total Esperado', 
+                    val: (
+                      <div className="flex flex-col">
+                        <span>USD {fmtNum(billing.totalExpectedUSD)}</span>
+                        {billing.totalExpectedARS > 0 && <span className="text-xs font-bold text-slate-500">ARS {fmtNum(billing.totalExpectedARS)}</span>}
+                      </div>
+                    ), 
+                    cls: 'text-slate-800 dark:text-white' 
+                  },
+                  { 
+                    label: 'Monto Recepcionado', 
+                    val: (
+                      <div className="flex flex-col">
+                        <span>USD {fmtNum(billing.totalReceivedUSD)}</span>
+                        {billing.totalExpectedARS > 0 && <span className="text-xs font-bold text-emerald-500/80">ARS {fmtNum(billing.totalReceivedARS)}</span>}
+                      </div>
+                    ), 
+                    cls: 'text-emerald-600 dark:text-emerald-400' 
+                  },
+                  { 
+                    label: 'Pendiente de Recepción', 
+                    val: (
+                      <div className="flex flex-col">
+                        <span>USD {fmtNum(billing.totalPendingUSD)}</span>
+                        {billing.totalExpectedARS > 0 && <span className="text-xs font-bold text-amber-500/80">ARS {fmtNum(billing.totalPendingARS)}</span>}
+                      </div>
+                    ), 
+                    cls: 'text-amber-600 dark:text-amber-400' 
+                  },
+                  { 
+                    label: '% Recepcionado Global', 
+                    val: (
+                      <div className="flex flex-col">
+                        <span>{Math.round(billing.totalPctUSD)}% (USD)</span>
+                        {billing.totalExpectedARS > 0 && <span className="text-xs font-bold text-slate-500">{Math.round(billing.totalPctARS)}% (ARS)</span>}
+                      </div>
+                    ), 
+                    cls: billing.totalPctUSD >= 80 ? 'text-emerald-600' : billing.totalPctUSD >= 50 ? 'text-amber-600' : 'text-red-500' 
+                  },
                 ].map((item, i) => (
                   <div key={i}>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{item.label}</p>
-                    <p className={`text-2xl font-black ${item.cls}`}>{item.val}</p>
+                    <div className={`text-xl font-black ${item.cls}`}>{item.val}</div>
                   </div>
                 ))}
               </div>
               <div>
                 <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
-                  <span>Progreso Global de Recepción</span>
-                  <span>{Math.round(billing.totalPct)}%</span>
+                  <span>Progreso Global de Recepción (USD)</span>
+                  <span>{Math.round(billing.totalPctUSD)}%</span>
                 </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-5 overflow-hidden">
+                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-5 overflow-hidden mb-3">
                   <div
                     className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-700 flex items-center justify-end pr-2"
-                    style={{ width: `${Math.max(2, Math.min(100, billing.totalPct))}%` }}
+                    style={{ width: `${Math.max(2, Math.min(100, billing.totalPctUSD))}%` }}
                   >
-                    {billing.totalPct > 10 && <span className="text-[9px] text-white font-black">{Math.round(billing.totalPct)}%</span>}
+                    {billing.totalPctUSD > 10 && <span className="text-[9px] text-white font-black">{Math.round(billing.totalPctUSD)}%</span>}
                   </div>
                 </div>
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
-                  <span className="text-emerald-600 font-bold">✓ USD {fmtNum(billing.totalReceived)} recepcionados</span>
-                  <span className="text-amber-600 font-bold">⏳ USD {fmtNum(billing.totalPending)} pendientes de recepción</span>
+                {billing.totalExpectedARS > 0 && (
+                  <>
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
+                      <span>Progreso Global de Recepción (ARS)</span>
+                      <span>{Math.round(billing.totalPctARS)}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-5 overflow-hidden mb-3">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-700 flex items-center justify-end pr-2"
+                        style={{ width: `${Math.max(2, Math.min(100, billing.totalPctARS))}%` }}
+                      >
+                        {billing.totalPctARS > 10 && <span className="text-[9px] text-white font-black">{Math.round(billing.totalPctARS)}%</span>}
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div className="flex flex-col text-[10px] text-slate-400 mt-1.5 gap-1">
+                  <div className="flex justify-between">
+                    <span className="text-emerald-600 font-bold">✓ USD {fmtNum(billing.totalReceivedUSD)} recepcionados</span>
+                    <span className="text-amber-600 font-bold">⏳ USD {fmtNum(billing.totalPendingUSD)} pendientes de recepción</span>
+                  </div>
+                  {billing.totalExpectedARS > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-emerald-600 font-bold">✓ ARS {fmtNum(billing.totalReceivedARS)} recepcionados</span>
+                      <span className="text-amber-600 font-bold">⏳ ARS {fmtNum(billing.totalPendingARS)} pendientes de recepción</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -669,12 +746,30 @@ export const CierreFiscalView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-900">
-                  {billing.perProject.map(({ project: p, expected, received, pending, pct }) => (
+                  {billing.perProject.map(({ project: p, expectedUSD, receivedUSD, pendingUSD, expectedARS, receivedARS, pendingARS, pct }) => (
                     <tr key={p.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-900/30 transition-colors">
                       <td className="px-5 py-3 font-bold text-slate-800 dark:text-white" colSpan={2}>{fullLabel(p)}</td>
-                      <td className="px-5 py-3 text-right">USD {fmtNum(expected)}</td>
-                      <td className="px-5 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">USD {fmtNum(received)}</td>
-                      <td className="px-5 py-3 text-right font-bold text-amber-600 dark:text-amber-400">USD {fmtNum(pending)}</td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex flex-col">
+                          {expectedUSD > 0 && <span>USD {fmtNum(expectedUSD)}</span>}
+                          {expectedARS > 0 && <span>ARS {fmtNum(expectedARS)}</span>}
+                          {expectedUSD === 0 && expectedARS === 0 && <span>USD 0</span>}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                        <div className="flex flex-col">
+                          {receivedUSD > 0 && <span>USD {fmtNum(receivedUSD)}</span>}
+                          {receivedARS > 0 && <span>ARS {fmtNum(receivedARS)}</span>}
+                          {receivedUSD === 0 && receivedARS === 0 && <span>USD 0</span>}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right font-bold text-amber-600 dark:text-amber-400">
+                        <div className="flex flex-col">
+                          {pendingUSD > 0 && <span>USD {fmtNum(pendingUSD)}</span>}
+                          {pendingARS > 0 && <span>ARS {fmtNum(pendingARS)}</span>}
+                          {pendingUSD === 0 && pendingARS === 0 && <span>USD 0</span>}
+                        </div>
+                      </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden">
