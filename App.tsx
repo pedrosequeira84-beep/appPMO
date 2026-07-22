@@ -16,6 +16,7 @@ import { ProfileView } from './views/Profile';
 import { DocumentationView } from './views/Documentation';
 import { TeamManagementView } from './views/TeamManagement';
 import { CierreFiscalView } from './views/CierreFiscal';
+import AIChatBot from './components/AIChatBot';
 
 const MainLayout: React.FC = () => {
     const { currentView, user } = useApp();
@@ -58,6 +59,7 @@ const MainLayout: React.FC = () => {
                     {renderView()}
                 </div>
             </main>
+            {/* <AIChatBot /> */}
         </div>
     );
 };
