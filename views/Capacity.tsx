@@ -504,6 +504,9 @@ export const CapacityView: React.FC = () => {
         prevMonth.setMonth(prevMonth.getMonth() - 1);
         const prevYear = prevMonth.getFullYear();
         const prevM = prevMonth.getMonth();
+        const currentYear = currentDate.getFullYear();
+        const currentM = currentDate.getMonth();
+
         const firstDayPrev = new Date(prevYear, prevM, 1).toISOString().split('T')[0];
         const lastDayPrev = new Date(prevYear, prevM + 1, 0).toISOString().split('T')[0];
 
@@ -512,54 +515,126 @@ export const CapacityView: React.FC = () => {
             .select('*')
             .eq('member_id', memberId)
             .gte('date', firstDayPrev)
-            .lte('date', lastDayPrev);
+            .lte('date', lastDayPrev)
+            .order('date', { ascending: true });
 
         if (error) return showToast('Error: ' + error.message, 'error');
         if (!prevAssignments || prevAssignments.length === 0) return showToast('No hay datos en el mes anterior', 'info');
 
-        if (!window.confirm(`¿Copiar ${prevAssignments.length} registros del mes anterior? Se omitirán feriados y fines de semana.`)) return;
+        if (!window.confirm(`¿Copiar registros del mes anterior adaptándolos a los días hábiles del mes actual?`)) return;
 
         setIsSaving(true);
         try {
-            const currentYear = currentDate.getFullYear();
-            const currentM = currentDate.getMonth();
-            const toInsert: any[] = [];
+            const VALID_TYPES = ['project', 'internal_bau', 'tableros', 'gestion', 'reuniones', 'capacitacion', 'licencias', 'poc', 'consultoria', 'logistica', 'facturacion'];
+            
+            const formatLocalISO = (d: Date) => {
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            };
 
-            for (const a of prevAssignments) {
-                const d = new Date(a.date + 'T00:00:00');
-                const dayNum = d.getDate();
-                const newDate = new Date(currentYear, currentM, dayNum);
-                const iso = newDate.toISOString().split('T')[0];
-                const dw = newDate.getDay();
-
+            // 1. Get working days for previous month
+            const prevWorkingDays: string[] = [];
+            const lastDayOfPrevMonth = new Date(prevYear, prevM + 1, 0).getDate();
+            for (let day = 1; day <= lastDayOfPrevMonth; day++) {
+                const d = new Date(prevYear, prevM, day);
+                const iso = formatLocalISO(d);
+                const dw = d.getDay();
                 if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS.includes(iso)) {
-                    // Evitar duplicados exactos
-                    const exists = capacityData.assignments.some(curr => 
-                        curr.memberId === memberId && curr.date === iso && curr.projectId === a.project_id && curr.type === a.type
-                    );
-                    if (!exists) {
-                        const member = team.find(m => m.id === memberId);
-                        toInsert.push({
-                            member_id: memberId,
-                            user_email: member?.email || null,
-                            date: iso,
-                            week_start: iso,
-                            type: a.type,
-                            project_id: a.project_id,
-                            hours: a.hours,
-                            observations: a.isExtra ? `[IS_EXTRA] ${a.observations}` : (a.observations || 'EMPTY'),
-                            week_key: null
-                        });
-                    }
+                    prevWorkingDays.push(iso);
                 }
             }
 
-            if (toInsert.length === 0) {
-                showToast('No hay nuevos registros para copiar', 'info');
+            // 2. Get working days for current month
+            const currWorkingDays: string[] = [];
+            const lastDayOfCurrMonth = new Date(currentYear, currentM + 1, 0).getDate();
+            for (let day = 1; day <= lastDayOfCurrMonth; day++) {
+                const d = new Date(currentYear, currentM, day);
+                const iso = formatLocalISO(d);
+                const dw = d.getDay();
+                if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS.includes(iso)) {
+                    currWorkingDays.push(iso);
+                }
+            }
+
+            if (currWorkingDays.length === 0) {
+                showToast('No hay días hábiles en el mes actual', 'info');
+                setIsSaving(false);
                 return;
             }
 
-            const { data, error: iError } = await supabase.from('capacity_assignments').insert(toInsert).select();
+            // Group assignments by key in current month to avoid inserting exact duplicates and sum hours instead
+            const groupedInsert: Record<string, any> = {};
+
+            for (const a of prevAssignments) {
+                if (!VALID_TYPES.includes(a.type)) continue;
+
+                // Find index of this assignment's date in prevWorkingDays
+                const dStr = a.date.split('T')[0];
+                let wIndex = prevWorkingDays.indexOf(dStr);
+                
+                // If original date wasn't a working day, default to first day
+                if (wIndex === -1) {
+                    wIndex = 0; 
+                }
+
+                // Map to current month working day
+                let targetIso = '';
+                if (wIndex < currWorkingDays.length) {
+                    targetIso = currWorkingDays[wIndex];
+                } else {
+                    targetIso = currWorkingDays[currWorkingDays.length - 1];
+                }
+
+                const member = team.find(m => m.id === memberId);
+                const isExtra = a.observations?.startsWith('[IS_EXTRA] ');
+                let obs = isExtra ? a.observations.replace('[IS_EXTRA] ', '') : (a.observations || 'EMPTY');
+                
+                if (wIndex >= currWorkingDays.length) {
+                    obs = obs === 'EMPTY' ? '[Día ajustado]' : `${obs} [Día ajustado]`;
+                }
+
+                const finalObs = isExtra ? `[IS_EXTRA] ${obs}` : obs;
+                const groupKey = `${targetIso}_${a.type}_${a.project_id || 'null'}_${isExtra}`;
+                
+                if (groupedInsert[groupKey]) {
+                    groupedInsert[groupKey].hours += Number(a.hours);
+                } else {
+                    groupedInsert[groupKey] = {
+                        member_id: memberId,
+                        user_email: member?.email || null,
+                        date: targetIso,
+                        week_start: targetIso,
+                        type: a.type,
+                        project_id: a.project_id,
+                        hours: Number(a.hours),
+                        observations: finalObs,
+                        week_key: null
+                    };
+                }
+            }
+
+            const toInsert = Object.values(groupedInsert);
+            const finalInsert = [];
+            
+            for (const item of toInsert) {
+                const exists = capacityData.assignments.some(curr => 
+                    curr.memberId === memberId && 
+                    curr.date === item.date && 
+                    curr.projectId === item.project_id && 
+                    curr.type === item.type
+                );
+                
+                if (!exists) {
+                    finalInsert.push(item);
+                }
+            }
+
+            if (finalInsert.length === 0) {
+                showToast('No hay nuevos registros válidos para copiar', 'info');
+                setIsSaving(false);
+                return;
+            }
+
+            const { data, error: iError } = await supabase.from('capacity_assignments').insert(finalInsert).select();
             if (iError) throw iError;
 
             const mapped = data.map((a: any) => {
