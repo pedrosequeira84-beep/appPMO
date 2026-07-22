@@ -279,7 +279,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             name: t.name,
             role: t.role,
             email: t.email || '',
-            capacity_id: t.capacity_id || undefined
+            capacity_id: t.capacity_id || undefined,
+            is_active: t.is_active !== false
           })));
         } else {
           // Fallback if table empty (first run)

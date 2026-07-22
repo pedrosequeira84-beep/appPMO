@@ -75,15 +75,30 @@ export const TeamManagementView: React.FC = () => {
   };
 
   const handleDelete = async (member: TeamMember) => {
-    if (!window.confirm(`¿Estás seguro de que querés eliminar a ${member.name}?`)) return;
+    if (!window.confirm(`¿Estás seguro de que querés marcar a ${member.name} como inactivo/a? No podrá cargar nuevas horas, pero se conservará su historial.`)) return;
     setLoading(true);
     try {
-      const { error } = await supabase.from('team_members').delete().eq('id', member.id);
+      const { error } = await supabase.from('team_members').update({ is_active: false }).eq('id', member.id);
       if (error) throw error;
-      showToast('Recurso eliminado exitosamente', 'success');
+      showToast('Recurso desactivado exitosamente', 'success');
       await refreshData();
     } catch (err: any) {
-      showToast(err.message || 'Error al eliminar recurso', 'error');
+      showToast(err.message || 'Error al desactivar recurso', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestore = async (member: TeamMember) => {
+    if (!window.confirm(`¿Estás seguro de que querés reactivar a ${member.name}?`)) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('team_members').update({ is_active: true }).eq('id', member.id);
+      if (error) throw error;
+      showToast('Recurso reactivado exitosamente', 'success');
+      await refreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Error al reactivar recurso', 'error');
     } finally {
       setLoading(false);
     }
@@ -137,13 +152,16 @@ export const TeamManagementView: React.FC = () => {
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
             {sortedTeam.map(member => (
-              <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+              <tr key={member.id} className={`hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors ${member.is_active === false ? 'opacity-60 bg-gray-50/50 dark:bg-slate-800/30' : ''}`}>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold text-sm flex-shrink-0">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${member.is_active === false ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400' : 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300'}`}>
                       {member.name.charAt(0).toUpperCase()}
                     </div>
-                    <span className="font-medium text-gray-800 dark:text-white">{member.name}</span>
+                    <span className="font-medium text-gray-800 dark:text-white">
+                      {member.name}
+                      {member.is_active === false && <span className="ml-2 text-xs text-red-500 font-semibold">(Inactivo)</span>}
+                    </span>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 text-sm">{member.email || '—'}</td>
@@ -166,14 +184,25 @@ export const TeamManagementView: React.FC = () => {
                   >
                     <i className="fas fa-edit"></i>
                   </button>
-                  <button
-                    onClick={() => handleDelete(member)}
-                    disabled={loading}
-                    className="text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
-                    title="Eliminar"
-                  >
-                    <i className="fas fa-trash"></i>
-                  </button>
+                  {member.is_active === false ? (
+                    <button
+                      onClick={() => handleRestore(member)}
+                      disabled={loading}
+                      className="text-green-500 hover:text-green-700 transition-colors disabled:opacity-50"
+                      title="Reactivar Recurso"
+                    >
+                      <i className="fas fa-undo"></i>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleDelete(member)}
+                      disabled={loading}
+                      className="text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
+                      title="Desactivar (Borrado Lógico)"
+                    >
+                      <i className="fas fa-user-slash"></i>
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

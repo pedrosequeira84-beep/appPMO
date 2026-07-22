@@ -999,7 +999,7 @@ export const CapacityView: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y dark:divide-slate-800">
-                            {team.map(member => {
+                            {team.filter(m => m.is_active !== false || Object.keys(groupedData[m.id] || {}).length > 0).map(member => {
                                 const memberActivities = groupedData[member.id] || {};
                                 const activityKeys = Object.keys(memberActivities);
                                 const dayRegularTotals: Record<string, number> = {};
@@ -1055,8 +1055,8 @@ export const CapacityView: React.FC = () => {
                                                 const isExtraDay = isWeekend || isHoliday;
                                                 return (
                                                     <td key={iso}
-                                                        className={`text-center font-black text-xs p-0 h-14 group/cell relative cursor-pointer ${isExtraDay ? 'bg-amber-50/30 dark:bg-amber-900/10 hover:bg-amber-50/60' : 'hover:bg-indigo-50/30'}`}
-                                                        onClick={() => handleCellClick(member.id, iso)}
+                                                        className={`text-center font-black text-xs p-0 h-14 group/cell relative ${member.is_active !== false ? 'cursor-pointer hover:bg-indigo-50/30' : 'cursor-not-allowed opacity-60'} ${isExtraDay ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''}`}
+                                                        onClick={() => member.is_active !== false && handleCellClick(member.id, iso)}
                                                     >
                                                         {(regTotal > 0 || extTotal > 0) ? (
                                                             <div className="flex flex-col items-center justify-center leading-none">
