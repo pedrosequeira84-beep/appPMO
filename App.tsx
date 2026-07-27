@@ -59,7 +59,7 @@ const MainLayout: React.FC = () => {
                     {renderView()}
                 </div>
             </main>
-            {/* <AIChatBot /> */}
+            <AIChatBot />
         </div>
     );
 };

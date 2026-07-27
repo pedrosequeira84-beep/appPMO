@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-import { GoogleGenerativeAI } from "npm:@google/generative-ai"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,13 +57,50 @@ serve(async (req: Request) => {
       supabaseClient.from('capacity_assignments').select('id, member_id, type, project_id, date, hours, observations').limit(500)
     ]);
 
-    // Instanciar el cliente de Google Gemini
-    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
-    if (!geminiApiKey) {
-       throw new Error('La variable de entorno GEMINI_API_KEY no está configurada en Supabase.')
+    // Autenticar con la Cuenta de Servicio de Google Cloud
+    const serviceAccountJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if (!serviceAccountJson) {
+       throw new Error('Las credenciales GOOGLE_SERVICE_ACCOUNT_JSON no están configuradas en Supabase.')
     }
-    const genAI = new GoogleGenerativeAI(geminiApiKey)
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" })
+    const sa = JSON.parse(serviceAccountJson)
+
+    // Crear JWT manualmente para autenticar contra la API de Gemini
+    const now = Math.floor(Date.now() / 1000)
+    const jwtHeader = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+    const jwtPayload = btoa(JSON.stringify({
+      iss: sa.client_email,
+      sub: sa.client_email,
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+      scope: 'https://www.googleapis.com/auth/cloud-platform'
+    })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+    // Importar clave privada y firmar el JWT
+    const pemKey = sa.private_key.replace(/\\n/g, '\n')
+    const keyData = pemKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '')
+    const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0))
+    const cryptoKey = await crypto.subtle.importKey(
+      'pkcs8', binaryKey.buffer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false, ['sign']
+    )
+    const signingInput = `${jwtHeader}.${jwtPayload}`
+    const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(signingInput))
+    const b64Signature = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+    const jwt = `${signingInput}.${b64Signature}`
+
+    // Intercambiar JWT por access token de Google
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
+    })
+    const tokenData = await tokenResponse.json()
+    if (!tokenData.access_token) {
+      throw new Error(`Error obteniendo token de Google: ${JSON.stringify(tokenData)}`)
+    }
+    const accessToken = tokenData.access_token
 
     // Preparar el Prompt Inyectando el contexto obtenido
     const systemInstruction = `
@@ -88,12 +124,31 @@ CARGA DE HORAS (CAPACITY): ${JSON.stringify(capacity)}
 ----------------------------------
     `;
 
-    const prompt = `${systemInstruction}\n\nPregunta del usuario: ${question}`
+    // Llamar a Vertex AI (Agent Platform) via REST API - usa facturación de Google Cloud
+    const projectId = 'bgh-pmo-ai'
+    const location = 'us-central1'
+    const modelId = 'gemini-2.5-flash' // Gemini 2.5 Flash - estable en Vertex AI mid-2026
+    const vertexUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:generateContent`
 
-    // Llamar a Gemini
-    const result = await model.generateContent(prompt)
-    const response = await result.response;
-    const text = response.text()
+    const vertexResponse = await fetch(vertexUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: question }] }],
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+      })
+    })
+
+    if (!vertexResponse.ok) {
+      const errText = await vertexResponse.text()
+      throw new Error(`Vertex AI API error: ${vertexResponse.status} - ${errText}`)
+    }
+
+    const data = await vertexResponse.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No se pudo generar una respuesta.'
 
     // Devolver la respuesta generada al frontend
     return new Response(
