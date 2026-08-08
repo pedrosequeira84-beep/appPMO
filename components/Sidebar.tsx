@@ -8,8 +8,9 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
-  const { currentView, setCurrentView, darkMode, toggleDarkMode, signOut, user } = useApp();
+  const { currentView, setCurrentView, darkMode, toggleDarkMode, signOut, user, currentUserMember } = useApp();
   const isAdmin = user?.email?.toLowerCase() === 'pedro.sequeira@bghtechpartner.com';
+  const isExternal = !!currentUserMember?.isExternal;
   const [dashboardsOpen, setDashboardsOpen] = React.useState(true);
 
   const navItemClass = (view: ViewName) => `w-full flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors text-left ${currentView === view ? 'bg-slate-800 text-white border-l-4 border-blue-500' : 'text-slate-300'
@@ -37,6 +38,17 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
 
       <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1 px-4">
+          {isExternal ? (
+            <>
+              <li><button onClick={() => handleNav('operaciones-sd')} className={navItemClass('operaciones-sd')}>
+                <i className="fas fa-headset w-6 text-center text-blue-400"></i><span>Operaciones S&D</span>
+              </button></li>
+              <li className="mt-6 pt-6 border-t border-slate-700/50"><button onClick={() => handleNav('perfil')} className={navItemClass('perfil')}>
+                <i className="fas fa-user-cog w-6 text-center text-gray-400"></i><span>Ajustes de Perfil</span>
+              </button></li>
+            </>
+          ) : (
+          <>
           <li>
             <button
               onClick={() => setDashboardsOpen(!dashboardsOpen)}
@@ -88,6 +100,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
           <li><button onClick={() => handleNav('cambios')} className={navItemClass('cambios')}>
             <i className="fas fa-exchange-alt w-6 text-center text-blue-400"></i><span>Control Cambios</span>
           </button></li>
+          <li><button onClick={() => handleNav('operaciones-sd')} className={navItemClass('operaciones-sd')}>
+            <i className="fas fa-headset w-6 text-center text-blue-400"></i><span>Operaciones S&D</span>
+          </button></li>
           <li><button onClick={() => handleNav('lecciones')} className={navItemClass('lecciones')}>
             <i className="fas fa-lightbulb w-6 text-center text-yellow-300"></i><span>Lecciones Aprendidas</span>
           </button></li>
@@ -102,6 +117,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
           <li className="mt-6 pt-6 border-t border-slate-700/50"><button onClick={() => handleNav('perfil')} className={navItemClass('perfil')}>
             <i className="fas fa-user-cog w-6 text-center text-gray-400"></i><span>Ajustes de Perfil</span>
           </button></li>
+          </>
+          )}
         </ul>
       </nav>
 

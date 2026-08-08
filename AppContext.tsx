@@ -280,7 +280,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             role: t.role,
             email: t.email || '',
             capacity_id: t.capacity_id || undefined,
-            is_active: t.is_active !== false
+            is_active: t.is_active !== false,
+            isExternal: t.is_external === true,
+            sdRole: (t.sd_role as any) || null
           })));
         } else {
           // Fallback if table empty (first run)
@@ -311,7 +313,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     date: (a.date || a.week_start || '').split('T')[0],
                     hours: a.hours,
                     observations: isExtra ? rawObs.replace('[IS_EXTRA] ', '') : rawObs,
-                    isExtra
+                    isExtra,
+                    source: a.source || 'manual',
+                    sdTimeEntryId: a.sd_time_entry_id || null
                 };
             })
           });
@@ -375,7 +379,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     date: (a.date || a.week_start || '').split('T')[0],
                     hours: a.hours,
                     observations: isExtra ? rawObs.replace('[IS_EXTRA] ', '') : rawObs,
-                    isExtra
+                    isExtra,
+                    source: a.source || 'manual',
+                    sdTimeEntryId: a.sd_time_entry_id || null
                 };
             })
           });
@@ -388,6 +394,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     useEffect(() => {
         refreshData();
     }, [user]);
+
+    // Usuarios externos (clientes) siempre entran directo a Operaciones S&D.
+    useEffect(() => {
+        if (currentUserMember?.isExternal && currentView !== 'operaciones-sd') {
+            setCurrentView('operaciones-sd');
+        }
+    }, [currentUserMember]);
 
 
   // Theme

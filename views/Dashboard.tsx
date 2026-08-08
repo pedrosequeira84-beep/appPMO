@@ -11,11 +11,16 @@ export const DashboardView: React.FC = () => {
 
 
 
+    // --- Proyectos Activos (En ejecución + Soporte) ---
+    const activeProjects = useMemo(() => {
+        return projects.filter(p => p.status === 'En ejecución' || p.status === 'Soporte');
+    }, [projects]);
+
     // --- KPIs de Alto Nivel ---
-    const activeProjectsCount = projects.filter(p => p.status === 'En ejecución' || p.status === 'Intervención temprana' || p.status === 'POC').length;
-    const totalRevenuePortafolio = projects.reduce((sum, p) => sum + (p.hwValue || 0) + (p.servicesValue || 0), 0);
-    const criticalRisksCount = risks.filter(r => r.impact === 'Alto' || r.isProblem).length;
-    const healthStatusCounts = projects.reduce((acc, p) => {
+    const activeProjectsCount = activeProjects.length;
+    const totalRevenuePortafolio = activeProjects.reduce((sum, p) => sum + (p.hwValue || 0) + (p.servicesValue || 0), 0);
+    const criticalRisksCount = risks.filter(r => !r.isMitigated && (r.impact === 'Alto' || r.isProblem)).length;
+    const healthStatusCounts = activeProjects.reduce((acc, p) => {
         const health = calculateProjectHealth(p, expenses);
         acc[health] = (acc[health] || 0) + 1;
         return acc;
@@ -24,8 +29,7 @@ export const DashboardView: React.FC = () => {
 
     // --- Rankings de Proyectos ---
     const scheduleRanking = useMemo(() => {
-        return projects
-            .filter(p => p.status === 'En ejecución' || p.status === 'Intervención temprana' || p.status === 'POC')
+        return activeProjects
             .map(p => {
                 const theoretical = new Date(p.theoreticalEndDate);
                 const currentEnd = p.realEndDate ? new Date(p.realEndDate) : new Date();
@@ -38,7 +42,7 @@ export const DashboardView: React.FC = () => {
             .filter(d => d.delay > 0)
             .sort((a, b) => b.delay - a.delay)
             .slice(0, 8);
-    }, [projects]);
+    }, [activeProjects]);
 
     const budgetBurnRanking = useMemo(() => {
         return projects.map(p => {
@@ -111,8 +115,7 @@ export const DashboardView: React.FC = () => {
 
     // 5. Schedule Delay (Days)
     const scheduleDelayData = useMemo(() => {
-        return projects
-            .filter(p => p.status === 'En ejecución' || p.status === 'Intervención temprana' || p.status === 'POC')
+        return activeProjects
             .map(p => {
                 const theoretical = new Date(p.theoreticalEndDate);
                 const currentEnd = p.realEndDate ? new Date(p.realEndDate) : new Date();
@@ -130,7 +133,7 @@ export const DashboardView: React.FC = () => {
             .filter(d => d.delay > 0)
             .sort((a, b) => b.delay - a.delay)
             .slice(0, 6);
-    }, [projects]);
+    }, [activeProjects]);
 
     // 6. Weekly Capacity Load (%) - Updated for daily assignments structure
     const capacityWeeklyData = useMemo(() => {

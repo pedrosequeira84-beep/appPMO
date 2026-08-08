@@ -295,6 +295,10 @@ export const CapacityView: React.FC = () => {
     }, [capacityData.assignments, team]);
 
     const handleCellClick = (memberId: string, date: string, activityKey?: string, existingAssignment?: CapacityAssignment) => {
+        if (existingAssignment?.source === 'operaciones_sd') {
+            showToast('Esta carga proviene de una tarea de Operaciones S&D. Editala desde esa sección.', 'info');
+            return;
+        }
         if (activityKey) {
             setInlineCell({ memberId, date, activityKey, assignmentId: existingAssignment?.id });
             setInlineHours(existingAssignment ? existingAssignment.hours.toString() : '');
@@ -343,8 +347,11 @@ export const CapacityView: React.FC = () => {
             if ((isEmpty || isZero) && existing) {
                 setIsSaving(true);
                 try {
-                    const { error } = await supabase.from('capacity_assignments').delete().eq('id', existing.id);
+                    const { data, error } = await supabase.from('capacity_assignments').delete().eq('id', existing.id).select();
                     if (error) throw error;
+                    if (!data || data.length === 0) {
+                        throw new Error('No se pudo eliminar el registro en Supabase. Verifique los permisos de RLS para su usuario.');
+                    }
                     setCapacityData(prev => ({ assignments: prev.assignments.filter(a => a.id !== existing.id) }));
                     setInlineCell(null);
                     showToast('Registro eliminado', 'info');
@@ -673,8 +680,11 @@ export const CapacityView: React.FC = () => {
         if (!window.confirm('¿Eliminar este registro?')) return;
 
         try {
-            const { error } = await supabase.from('capacity_assignments').delete().eq('id', selectedCell.assignmentId);
+            const { data, error } = await supabase.from('capacity_assignments').delete().eq('id', selectedCell.assignmentId).select();
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('No se pudo eliminar el registro en Supabase. Verifique los permisos de RLS para su usuario.');
+            }
 
             setCapacityData(prev => ({
                 assignments: prev.assignments.filter(a => a.id !== selectedCell.assignmentId)
@@ -713,11 +723,15 @@ export const CapacityView: React.FC = () => {
 
         try {
             const ids = toDelete.map(a => a.id);
-            const { error } = await supabase.from('capacity_assignments').delete().in('id', ids);
+            const { data, error } = await supabase.from('capacity_assignments').delete().in('id', ids).select();
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('No se pudieron eliminar los registros en Supabase. Verifique los permisos de RLS para su usuario.');
+            }
 
+            const deletedIds = data.map((d: any) => d.id);
             setCapacityData(prev => ({
-                assignments: prev.assignments.filter(a => !ids.includes(a.id))
+                assignments: prev.assignments.filter(a => !deletedIds.includes(a.id))
             }));
             showToast('Fila eliminada', 'info');
             if (selectedQueryProjectId) {
@@ -1486,6 +1500,9 @@ export const CapacityView: React.FC = () => {
                                                                                 {memberName.charAt(0)}
                                                                             </div>
                                                                             <span className="font-bold text-gray-700 dark:text-gray-300">{memberName}</span>
+                                                                            {a.source === 'operaciones_sd' && (
+                                                                                <i className="fas fa-lock text-[9px] text-blue-400" title="Cargada desde Operaciones S&D — editar desde esa sección"></i>
+                                                                            )}
                                                                         </div>
                                                                     </td>
                                                                     <td className="p-4 text-center">
@@ -1511,7 +1528,7 @@ export const CapacityView: React.FC = () => {
                 </div>
             )}
 
-            <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={null}>
+            <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
                 <div className="p-2">
                     {/* Modal Header from Screenshot 3 */}
                     <div className="flex items-center gap-3 mb-1">

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import { supabase } from '../utils/supabase';
 import { TeamMember } from '../types';
+import SDExternalAccessAdmin from '../components/operaciones-sd/SDExternalAccessAdmin';
+import SDIntegrationsPlaceholder from '../components/operaciones-sd/SDIntegrationsPlaceholder';
 
 const ADMIN_EMAIL = 'pedro.sequeira@bghtechpartner.com';
 
@@ -13,7 +15,7 @@ export const TeamManagementView: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
-  const [formData, setFormData] = useState({ name: '', email: '', role: '', capacity_id: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', role: '', capacity_id: '', sdRole: '', isExternal: false });
 
   if (!isAdmin) {
     return (
@@ -39,11 +41,13 @@ export const TeamManagementView: React.FC = () => {
         email: formData.email.trim(),
         role: formData.role.trim(),
         capacity_id: formData.capacity_id.trim() || null,
+        is_external: formData.isExternal,
+        sd_role: formData.sdRole || null,
       });
       if (error) throw error;
       showToast('Recurso agregado exitosamente', 'success');
       setShowAddModal(false);
-      setFormData({ name: '', email: '', role: '' });
+      setFormData({ name: '', email: '', role: '', capacity_id: '', sdRole: '', isExternal: false });
       await refreshData();
     } catch (err: any) {
       showToast(err.message || 'Error al agregar recurso', 'error');
@@ -59,13 +63,17 @@ export const TeamManagementView: React.FC = () => {
     try {
       const { error } = await supabase
         .from('team_members')
-        .update({ name: formData.name.trim(), email: formData.email.trim(), role: formData.role.trim(), capacity_id: formData.capacity_id.trim() || null })
+        .update({
+          name: formData.name.trim(), email: formData.email.trim(), role: formData.role.trim(),
+          capacity_id: formData.capacity_id.trim() || null,
+          is_external: formData.isExternal, sd_role: formData.sdRole || null,
+        })
         .eq('id', editingMember.id);
       if (error) throw error;
       showToast('Recurso actualizado exitosamente', 'success');
       setShowEditModal(false);
       setEditingMember(null);
-      setFormData({ name: '', email: '', role: '' });
+      setFormData({ name: '', email: '', role: '', capacity_id: '', sdRole: '', isExternal: false });
       await refreshData();
     } catch (err: any) {
       showToast(err.message || 'Error al actualizar recurso', 'error');
@@ -106,7 +114,10 @@ export const TeamManagementView: React.FC = () => {
 
   const openEdit = (member: TeamMember) => {
     setEditingMember(member);
-    setFormData({ name: member.name, email: member.email || '', role: member.role, capacity_id: member.capacity_id || '' });
+    setFormData({
+      name: member.name, email: member.email || '', role: member.role, capacity_id: member.capacity_id || '',
+      sdRole: member.sdRole || '', isExternal: !!member.isExternal
+    });
     setShowEditModal(true);
   };
 
@@ -122,7 +133,7 @@ export const TeamManagementView: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => { setFormData({ name: '', email: '', role: '' }); setShowAddModal(true); }}
+          onClick={() => { setFormData({ name: '', email: '', role: '', capacity_id: '', sdRole: '', isExternal: false }); setShowAddModal(true); }}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium"
         >
           <i className="fas fa-plus"></i> Nuevo Recurso
@@ -147,6 +158,7 @@ export const TeamManagementView: React.FC = () => {
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rol</th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID Empresa</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rol S&D</th>
               <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
@@ -161,6 +173,7 @@ export const TeamManagementView: React.FC = () => {
                     <span className="font-medium text-gray-800 dark:text-white">
                       {member.name}
                       {member.is_active === false && <span className="ml-2 text-xs text-red-500 font-semibold">(Inactivo)</span>}
+                      {member.isExternal && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 font-bold uppercase">Externo</span>}
                     </span>
                   </div>
                 </td>
@@ -175,6 +188,15 @@ export const TeamManagementView: React.FC = () => {
                     ? <span className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">{member.capacity_id}</span>
                     : <span className="text-gray-400 text-sm">—</span>
                   }
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {member.sdRole ? (
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${member.sdRole === 'administrador' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'}`}>
+                      {member.sdRole === 'administrador' ? 'Administrador' : 'Responsable'}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400">Observador</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <button
@@ -208,7 +230,7 @@ export const TeamManagementView: React.FC = () => {
             ))}
             {team.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                   No hay recursos registrados.
                 </td>
               </tr>
@@ -272,6 +294,30 @@ export const TeamManagementView: React.FC = () => {
                   className="w-full border border-gray-300 dark:border-dark-border rounded-lg px-3 py-2 dark:bg-slate-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Ej: 369"
                 />
+              </div>
+              <div className="border-t dark:border-dark-border pt-4 space-y-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Operaciones S&D</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rol en Operaciones S&D</label>
+                  <select
+                    value={formData.sdRole}
+                    onChange={e => setFormData(prev => ({ ...prev, sdRole: e.target.value }))}
+                    className="w-full border border-gray-300 dark:border-dark-border rounded-lg px-3 py-2 dark:bg-slate-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Observador (por defecto)</option>
+                    <option value="responsable">Responsable</option>
+                    <option value="administrador">Administrador</option>
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.isExternal}
+                    onChange={e => setFormData(prev => ({ ...prev, isExternal: e.target.checked }))}
+                    className="w-4 h-4 accent-orange-600"
+                  />
+                  Usuario externo (cliente) — acceso restringido y de solo lectura a Operaciones S&D
+                </label>
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
@@ -347,6 +393,30 @@ export const TeamManagementView: React.FC = () => {
                   placeholder="Ej: 369"
                 />
               </div>
+              <div className="border-t dark:border-dark-border pt-4 space-y-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Operaciones S&D</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rol en Operaciones S&D</label>
+                  <select
+                    value={formData.sdRole}
+                    onChange={e => setFormData(prev => ({ ...prev, sdRole: e.target.value }))}
+                    className="w-full border border-gray-300 dark:border-dark-border rounded-lg px-3 py-2 dark:bg-slate-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Observador (por defecto)</option>
+                    <option value="responsable">Responsable</option>
+                    <option value="administrador">Administrador</option>
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.isExternal}
+                    onChange={e => setFormData(prev => ({ ...prev, isExternal: e.target.checked }))}
+                    className="w-4 h-4 accent-orange-600"
+                  />
+                  Usuario externo (cliente) — acceso restringido y de solo lectura a Operaciones S&D
+                </label>
+              </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
@@ -367,6 +437,9 @@ export const TeamManagementView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <SDExternalAccessAdmin />
+      <SDIntegrationsPlaceholder />
     </div>
   );
 };

@@ -16,10 +16,11 @@ import { ProfileView } from './views/Profile';
 import { DocumentationView } from './views/Documentation';
 import { TeamManagementView } from './views/TeamManagement';
 import { CierreFiscalView } from './views/CierreFiscal';
+import { OperacionesSDView } from './views/OperacionesSD';
 import AIChatBot from './components/AIChatBot';
 
 const MainLayout: React.FC = () => {
-    const { currentView, user } = useApp();
+    const { currentView, user, currentUserMember } = useApp();
     const [mobileOpen, setMobileOpen] = useState(false);
 
     if (!user) {
@@ -27,8 +28,13 @@ const MainLayout: React.FC = () => {
     }
 
     const isAdmin = user?.email?.toLowerCase() === 'pedro.sequeira@bghtechpartner.com';
+    const isExternal = !!currentUserMember?.isExternal;
 
     const renderView = () => {
+        // Los usuarios externos (clientes) solo pueden ver Operaciones S&D y su perfil.
+        if (isExternal) {
+            return currentView === 'perfil' ? <ProfileView /> : <OperacionesSDView />;
+        }
         switch (currentView) {
             case 'dashboard-pmo': return <DashboardView />;
             case 'dashboard-ejecutivo': return <DashboardEjecutivoView />;
@@ -43,6 +49,7 @@ const MainLayout: React.FC = () => {
             case 'perfil': return <ProfileView />;
             case 'team-management': return <TeamManagementView />;
             case 'cierre-fiscal': return isAdmin ? <CierreFiscalView /> : <DashboardView />;
+            case 'operaciones-sd': return <OperacionesSDView />;
             default: return <DashboardView />;
         }
     };
