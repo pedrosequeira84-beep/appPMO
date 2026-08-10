@@ -66,6 +66,12 @@ Usuarios externos (`team_members.is_external = true`) solo ven Operaciones S&D (
 `App.tsx`/`Sidebar.tsx`), en modo lectura, acotados a lo que se les otorgue en `sd_external_access`
 (gestionable desde Gestión de Recursos → "Accesos Externos").
 
+La jerarquía Administrador/Responsable/Observador se exige tanto en el frontend
+(`canManageTask`/`canFinishTask` en `utils/sdHelpers.ts`) como en la base de datos: las policies de
+escritura sobre las tablas `sd_*` requieren `sd_can_manage_current()` (administrador o responsable),
+y otorgar/revocar acceso externo requiere específicamente `sd_is_admin_current()`
+(`supabase/migrations/20260809_operaciones_sd_role_enforcement.sql`).
+
 ## Decisiones de arquitectura que se mantuvieron a propósito
 
 - **Sin capa de Repository / Clean Architecture formal**: el resto de la app llama a

@@ -55,6 +55,9 @@ export function shouldAutoStartTask(task: SDTask): boolean {
 }
 
 export function canFinishTask(task: SDTask, entries: SDTimeEntry[], role: SDEffectiveRole, currentMemberId?: string | null): { allowed: boolean; reason?: string } {
+  if (!canManageTask(role)) {
+    return { allowed: false, reason: 'Tu rol (Observador) no tiene permiso para finalizar tareas.' };
+  }
   if (role !== 'administrador' && task.assigneeMemberId !== currentMemberId) {
     return { allowed: false, reason: 'Solo el responsable de la tarea (o un Administrador) puede finalizarla.' };
   }

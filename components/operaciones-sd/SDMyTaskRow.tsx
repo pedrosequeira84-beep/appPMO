@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, SDTask } from '../../types';
-import { priorityBadgeClass, isTaskOverdue, canFinishTask, SDEffectiveRole } from '../../utils/sdHelpers';
+import { priorityBadgeClass, isTaskOverdue, canFinishTask, canManageTask, SDEffectiveRole } from '../../utils/sdHelpers';
 import { SDDataApi } from '../../hooks/useOperacionesSDData';
 
 type ActionKey = 'hours' | 'comment' | 'date' | 'block' | null;
@@ -26,6 +26,7 @@ const SDMyTaskRow: React.FC<Props> = ({ task, project, api, role, currentMemberI
   const [dateReason, setDateReason] = useState('');
 
   const overdue = isTaskOverdue(task);
+  const canEdit = canManageTask(role);
   const finishCheck = canFinishTask(task, api.timeEntries, role, currentMemberId);
   const toggle = (key: ActionKey) => setAction(prev => prev === key ? null : key);
 
@@ -68,47 +69,51 @@ const SDMyTaskRow: React.FC<Props> = ({ task, project, api, role, currentMemberI
         </button>
 
         <div className="flex items-center gap-0.5">
-          <button onClick={() => toggle('hours')} className={iconBtn} title="Registrar horas" aria-label="Registrar horas"><i className="fas fa-clock"></i></button>
-          <button onClick={() => toggle('comment')} className={iconBtn} title="Agregar comentario" aria-label="Agregar comentario"><i className="fas fa-comment"></i></button>
-          {task.blocked ? (
-            <button onClick={handleUnblock} className={iconBtn} title="Desbloquear" aria-label="Desbloquear"><i className="fas fa-unlock"></i></button>
-          ) : (
-            <button onClick={() => toggle('block')} className={iconBtn} title="Bloquear" aria-label="Bloquear"><i className="fas fa-lock"></i></button>
+          {canEdit && (
+            <>
+              <button onClick={() => toggle('hours')} className={iconBtn} title="Registrar horas" aria-label="Registrar horas"><i className="fas fa-clock"></i></button>
+              <button onClick={() => toggle('comment')} className={iconBtn} title="Agregar comentario" aria-label="Agregar comentario"><i className="fas fa-comment"></i></button>
+              {task.blocked ? (
+                <button onClick={handleUnblock} className={iconBtn} title="Desbloquear" aria-label="Desbloquear"><i className="fas fa-unlock"></i></button>
+              ) : (
+                <button onClick={() => toggle('block')} className={iconBtn} title="Bloquear" aria-label="Bloquear"><i className="fas fa-lock"></i></button>
+              )}
+              <button onClick={() => toggle('date')} className={iconBtn} title="Cambiar Fecha Planificada" aria-label="Cambiar Fecha Planificada"><i className="fas fa-calendar-day"></i></button>
+              <button
+                onClick={() => api.finishTask(task.id)}
+                disabled={!finishCheck.allowed || task.status === 'done'}
+                className={`${iconBtn} disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400`}
+                title={task.status === 'done' ? 'Ya finalizada' : (finishCheck.reason || 'Finalizar tarea')}
+                aria-label="Finalizar tarea"
+              >
+                <i className="fas fa-check-circle"></i>
+              </button>
+            </>
           )}
-          <button onClick={() => toggle('date')} className={iconBtn} title="Cambiar Fecha Planificada" aria-label="Cambiar Fecha Planificada"><i className="fas fa-calendar-day"></i></button>
-          <button
-            onClick={() => api.finishTask(task.id)}
-            disabled={!finishCheck.allowed || task.status === 'done'}
-            className={`${iconBtn} disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400`}
-            title={task.status === 'done' ? 'Ya finalizada' : (finishCheck.reason || 'Finalizar tarea')}
-            aria-label="Finalizar tarea"
-          >
-            <i className="fas fa-check-circle"></i>
-          </button>
           <button onClick={onOpen} className={iconBtn} title="Abrir tarea" aria-label="Abrir tarea"><i className="fas fa-expand"></i></button>
         </div>
       </div>
 
-      {action === 'hours' && (
+      {canEdit && action === 'hours' && (
         <div className="mt-3 pt-3 border-t border-gray-50 dark:border-slate-700 flex flex-wrap gap-2">
           <input type="number" min="0" step="0.5" autoFocus placeholder="Horas" value={hours} onChange={e => setHours(e.target.value)} className="w-24 h-9 px-3 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs outline-none border-2 border-transparent focus:border-blue-500" />
           <input placeholder="Comentario (opcional)" value={hoursComment} onChange={e => setHoursComment(e.target.value)} className="flex-1 min-w-[140px] h-9 px-3 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs outline-none border-2 border-transparent focus:border-blue-500" />
           <button onClick={submitHours} className="h-9 px-4 bg-blue-600 text-white rounded-lg text-xs font-black">CARGAR</button>
         </div>
       )}
-      {action === 'comment' && (
+      {canEdit && action === 'comment' && (
         <div className="mt-3 pt-3 border-t border-gray-50 dark:border-slate-700 flex gap-2">
           <input autoFocus placeholder="Escribir comentario..." value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitComment()} className="flex-1 h-9 px-3 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs outline-none border-2 border-transparent focus:border-blue-500" />
           <button onClick={submitComment} className="h-9 px-4 bg-gray-900 dark:bg-white dark:text-gray-900 text-white rounded-lg text-xs font-black">ENVIAR</button>
         </div>
       )}
-      {action === 'block' && (
+      {canEdit && action === 'block' && (
         <div className="mt-3 pt-3 border-t border-gray-50 dark:border-slate-700 flex gap-2">
           <input autoFocus placeholder="Motivo del bloqueo..." value={blockReason} onChange={e => setBlockReason(e.target.value)} className="flex-1 h-9 px-3 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs outline-none border-2 border-transparent focus:border-red-500" />
           <button onClick={submitBlock} className="h-9 px-4 bg-red-600 text-white rounded-lg text-xs font-black">BLOQUEAR</button>
         </div>
       )}
-      {action === 'date' && (
+      {canEdit && action === 'date' && (
         <div className="mt-3 pt-3 border-t border-gray-50 dark:border-slate-700 flex flex-wrap gap-2">
           <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-9 px-3 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs outline-none border-2 border-transparent focus:border-blue-500" />
           <input placeholder="Justificación (obligatoria)" value={dateReason} onChange={e => setDateReason(e.target.value)} className="flex-1 min-w-[140px] h-9 px-3 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs outline-none border-2 border-transparent focus:border-blue-500" />
