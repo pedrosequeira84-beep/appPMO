@@ -78,7 +78,7 @@ const AIChatBot: React.FC = () => {
                 <h3 className="font-bold text-sm tracking-wide">PMO Asistente IA</h3>
                 <p className="text-[11px] text-indigo-200 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse"></span>
-                  Powered by Gemini 3.5 Flash Lite
+                  Powered by Gemini 2.5 Flash
                 </p>
               </div>
             </div>

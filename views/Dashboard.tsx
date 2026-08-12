@@ -697,28 +697,82 @@ export const DashboardView: React.FC = () => {
         reader.readAsArrayBuffer(file);
     };
 
-    const Card = ({ title, value, icon, color, sub }: any) => (
-        <div className={`bg-white dark:bg-dark-card dark:border-dark-border p-6 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-${color}-500 hover:shadow-md transition-shadow h-full flex flex-col justify-center`}>
-            <div className="flex items-center">
-                <div className={`p-3 rounded-full bg-${color}-100 text-${color}-600 dark:bg-${color}-900 dark:text-${color}-300`}><i className={`fas ${icon} fa-2x`}></i></div>
-                <div className="ml-4">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-                    <p className="text-2xl font-bold dark:text-white">{value}</p>
-                    {sub}
+    const Card = ({ title, value, icon, color }: any) => {
+        const getSparklinePath = (col: string) => {
+            switch(col) {
+                case 'blue': return 'M 0 15 Q 15 5 30 18 T 60 5 T 90 20 L 100 18'; 
+                case 'indigo': return 'M 0 20 Q 20 8 40 18 T 80 5 L 100 8'; 
+                case 'red': return 'M 0 10 Q 15 25 30 12 T 60 22 T 90 15 L 100 12'; 
+                case 'green': return 'M 0 22 Q 15 8 30 15 T 60 5 T 90 10 L 100 5'; 
+                default: return 'M 0 15 H 100';
+            }
+        };
+
+        const getSparklineColor = (col: string) => {
+            switch(col) {
+                case 'blue': return '#00aeef';
+                case 'indigo': return '#8b5cf6';
+                case 'red': return '#f43f5e';
+                case 'green': return '#10b981';
+                default: return '#00aeef';
+            }
+        };
+
+        const getIconColors = (col: string) => {
+            switch(col) {
+                case 'blue': return 'bg-sky-50 text-sky-500 dark:bg-sky-950/40 dark:text-sky-300';
+                case 'indigo': return 'bg-violet-50 text-violet-500 dark:bg-violet-950/40 dark:text-violet-300';
+                case 'red': return 'bg-rose-50 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300';
+                case 'green': return 'bg-emerald-50 text-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-300';
+                default: return 'bg-slate-50 text-slate-500';
+            }
+        };
+
+        const trendText = color === 'red' ? '↘ -4.8%' : (color === 'green' ? '✓ Estable' : '↗ +2.15%');
+        const trendBg = color === 'red' ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400';
+
+        return (
+            <div className="bg-white dark:bg-dark-card rounded-2xl shadow-premium hover:shadow-premium-hover border border-slate-100/80 dark:border-dark-border/40 p-5 transition-all duration-300 flex flex-col justify-between h-full group">
+                <div className="flex items-center justify-between">
+                    <div className={`p-2.5 rounded-xl ${getIconColors(color)} transition-transform group-hover:scale-105 duration-300`}>
+                        <i className={`fas ${icon} text-lg w-5 text-center`}></i>
+                    </div>
+                    <button className="text-slate-300 hover:text-slate-500 dark:hover:text-white transition-colors">
+                        <i className="fas fa-ellipsis-h text-sm"></i>
+                    </button>
+                </div>
+                
+                <div className="mt-4 flex items-end justify-between gap-4">
+                    <div>
+                        <p className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{title}</p>
+                        <p className="text-2xl font-black dark:text-white text-slate-800 tracking-tight mt-1 leading-none">{value}</p>
+                    </div>
+                    <div className="w-16 h-8 flex items-end">
+                        <svg className="w-full h-full opacity-80" viewBox="0 0 100 30" fill="none" stroke={getSparklineColor(color)} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d={getSparklinePath(color)} />
+                        </svg>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 mt-3.5 text-[10px]">
+                    <span className={`px-2 py-0.5 rounded-lg font-bold ${trendBg}`}>
+                        {trendText}
+                    </span>
+                    <span className="text-slate-400 dark:text-slate-500 font-medium">desde la semana pasada</span>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="fade-in pb-10">
-            <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-gray-800 dark:text-white">Dashboard PMO</h2>
-                    <p className="text-gray-500 dark:text-gray-400">Análisis temporal y financiero</p>
+                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">Dashboard PMO</h2>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Análisis temporal, financiero y operacional del portafolio</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={exportToExcel} className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 text-sm transition-colors shadow-sm hover:shadow-md"><i className="fas fa-file-excel mr-2"></i>Reporte Full</button>
+                    <button onClick={exportToExcel} className="px-4 py-2 bg-gradient-to-r from-brand-cyan to-brand-blue text-white rounded-xl text-xs font-semibold hover:shadow-lg hover:shadow-brand-cyan/20 transition-all shadow-sm"><i className="fas fa-file-excel mr-2"></i>Reporte Full</button>
                 </div>
             </div>
 
@@ -750,22 +804,22 @@ export const DashboardView: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border min-h-[400px]">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white flex items-center gap-2">
-                        <i className="fas fa-sort-amount-up text-red-500"></i>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 min-h-[400px]">
+                    <h3 className="text-md font-bold mb-1 dark:text-white flex items-center gap-2">
+                        <i className="fas fa-sort-amount-up text-rose-500"></i>
                         Ranking: Mayores Atrasos (Días)
                     </h3>
-                    <p className="text-xs text-gray-400 mb-6">Proyectos con mayor diferencia entre Fin Teórico y Fecha Actual/Real</p>
+                    <p className="text-[10px] text-slate-400 mb-6">Proyectos con mayor diferencia entre Fin Teórico y Fecha Actual/Real</p>
                     <div className="space-y-4">
                         {scheduleRanking.map((item, idx) => (
                             <div key={idx} className="flex flex-col gap-1">
-                                <div className="flex justify-between items-end text-xs uppercase font-black text-gray-500 dark:text-gray-400">
+                                <div className="flex justify-between items-end text-xs uppercase font-black text-slate-500 dark:text-slate-400">
                                     <span className="truncate pr-4 font-bold">{item.name}</span>
-                                    <span className="text-red-600 dark:text-red-400 font-mono text-sm">{item.delay} días</span>
+                                    <span className="text-rose-500 dark:text-rose-400 font-mono text-sm">{item.delay} días</span>
                                 </div>
-                                <div className="w-full h-2.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                <div className="w-full h-2 bg-slate-50 dark:bg-slate-800 rounded-full overflow-hidden">
                                     <div
-                                        className="h-full bg-gradient-to-r from-red-400 to-red-600 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.4)]"
+                                        className="h-full bg-gradient-to-r from-rose-400 to-rose-600 rounded-full shadow-[0_0_8px_rgba(244,63,94,0.3)]"
                                         style={{ width: `${Math.min(100, (item.delay / (scheduleRanking[0]?.delay || 1)) * 100)}%` }}
                                     ></div>
                                 </div>
@@ -775,22 +829,22 @@ export const DashboardView: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border min-h-[400px]">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white flex items-center gap-2">
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 min-h-[400px]">
+                    <h3 className="text-md font-bold mb-1 dark:text-white flex items-center gap-2">
                         <i className="fas fa-fire text-amber-500"></i>
                         Ranking: Consumo de Presupuesto (%)
                     </h3>
-                    <p className="text-xs text-gray-400 mb-6">Gasto Real vs Presupuesto de Costos Estimado</p>
+                    <p className="text-[10px] text-slate-400 mb-6">Gasto Real vs Presupuesto de Costos Estimado</p>
                     <div className="space-y-4">
                         {budgetBurnRanking.map((item, idx) => (
                             <div key={idx} className="flex flex-col gap-1">
-                                <div className="flex justify-between items-end text-xs uppercase font-black text-gray-500 dark:text-gray-400">
+                                <div className="flex justify-between items-end text-xs uppercase font-black text-slate-500 dark:text-slate-400">
                                     <span className="truncate pr-4 font-bold">{item.name}</span>
-                                    <span className={`font-mono text-sm ${item.burnRate > 100 ? 'text-red-600' : 'text-amber-600'}`}>{item.burnRate}%</span>
+                                    <span className={`font-mono text-sm ${item.burnRate > 100 ? 'text-rose-500' : 'text-amber-500'}`}>{item.burnRate}%</span>
                                 </div>
-                                <div className="w-full h-2.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                <div className="w-full h-2 bg-slate-50 dark:bg-slate-800 rounded-full overflow-hidden">
                                     <div
-                                        className={`h-full rounded-full ${item.burnRate > 100 ? 'bg-red-500' : 'bg-gradient-to-r from-amber-400 to-amber-600'}`}
+                                        className={`h-full rounded-full ${item.burnRate > 100 ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]' : 'bg-gradient-to-r from-amber-400 to-amber-500'}`}
                                         style={{ width: `${Math.min(100, item.burnRate)}%` }}
                                     ></div>
                                 </div>
@@ -804,31 +858,31 @@ export const DashboardView: React.FC = () => {
             {/* Main Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 {/* 1. Status Donut */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-80">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white">Estado de Proyectos</h3>
-                    <ResponsiveContainer width="100%" height="100%">
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Estado de Proyectos</h3>
+                    <ResponsiveContainer width="100%" height="90%">
                         <PieChart>
-                            <Pie data={statusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                            <Pie data={statusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
                                 {statusData.map((_entry: any, index: number) => (<Cell key={`cell-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />))}
                             </Pie>
                             <Tooltip />
-                            <Legend />
+                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
 
                 {/* 2. Revenue vs Cost (Top 5) */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-80">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white">Ventas vs Costos (Top 5)</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Ventas vs Costos (Top 5)</h3>
                     <ResponsiveContainer width="100%" height="90%">
                         <BarChart data={revenueCostData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="name" fontSize={10} />
-                            <YAxis fontSize={10} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
+                            <YAxis fontSize={9} stroke="#94a3b8" />
                             <Tooltip />
-                            <Legend />
-                            <Bar dataKey="venta" name="Venta" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="costo" name="Costo" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
+                            <Bar dataKey="venta" name="Venta" fill="#0082ff" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="costo" name="Costo" fill="#ff9e2b" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
@@ -836,46 +890,44 @@ export const DashboardView: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 {/* 3. Top Projects Effort */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-80">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white">Foco del Mes: Proyectos con más horas</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Foco del Mes: Proyectos con más horas</h3>
                     <ResponsiveContainer width="100%" height="90%">
                         <BarChart data={recentEffortData} layout="vertical">
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                             <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" fontSize={10} width={110} />
+                            <YAxis dataKey="name" type="category" fontSize={9} width={110} stroke="#94a3b8" />
                             <Tooltip
                                 content={({ active, payload }) => {
                                     if (active && payload && payload.length) {
                                         const d = payload[0].payload;
                                         return (
-                                            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                                                <p style={{ fontWeight: 700, fontSize: 12, color: '#1e293b', marginBottom: 4, maxWidth: 260 }}>{d.fullLabel}</p>
-                                                <p style={{ color: '#10b981', fontWeight: 700, fontSize: 13 }}>Horas : {d.hours}</p>
+                                            <div className="bg-white dark:bg-dark-card border border-slate-100 dark:border-dark-border p-2.5 rounded-xl shadow-premium">
+                                                <p className="font-bold text-xs text-slate-800 dark:text-white mb-1 max-w-xs">{d.fullLabel}</p>
+                                                <p className="text-emerald-500 font-bold text-xs">Horas : {d.hours}</p>
                                             </div>
                                         );
                                     }
                                     return null;
                                 }}
                             />
-                            <Bar dataKey="hours" name="Horas" fill="#10b981" radius={[0, 4, 4, 0]} />
+                            <Bar dataKey="hours" name="Horas" fill="#00c2ff" radius={[0, 4, 4, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
 
                 {/* 4. Weekly Capacity Load */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-80">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white flex items-center gap-2">
-                        Carga del Equipo (%)
-                    </h3>
-                    <p className="text-xs text-gray-400 mb-4">Ocupación semanal vs Disponibilidad (40h)</p>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Carga del Equipo (%)</h3>
+                    <p className="text-[10px] text-slate-400 mb-4">Ocupación semanal vs Disponibilidad (40h)</p>
                     <ResponsiveContainer width="100%" height="80%">
                         <LineChart data={capacityWeeklyData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                            <XAxis dataKey="name" fontSize={10} />
-                            <YAxis unit="%" />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
+                            <YAxis unit="%" fontSize={9} stroke="#94a3b8" />
                             <Tooltip />
-                            <Legend />
-                            <Line type="monotone" dataKey="load" name="% Ocupación" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
+                            <Line type="monotone" dataKey="load" name="% Ocupación" stroke="#0082ff" strokeWidth={3} dot={{ r: 3, fill: '#0082ff', strokeWidth: 1 }} activeDot={{ r: 5 }} />
                             <Line type="step" dataKey="limit" name="Límite" stroke="#f43f5e" strokeDasharray="5 5" dot={false} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -884,13 +936,13 @@ export const DashboardView: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 {/* 5. Resource Individual Load */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-80">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white">Carga Individual (Esta Semana)</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Carga Individual (Esta Semana)</h3>
                     <ResponsiveContainer width="100%" height="90%">
                         <BarChart data={resourceLoadData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="name" fontSize={10} />
-                            <YAxis fontSize={10} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
+                            <YAxis fontSize={9} stroke="#94a3b8" />
                             <Tooltip />
                             <Bar dataKey="hours" name="Horas" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -898,17 +950,17 @@ export const DashboardView: React.FC = () => {
                 </div>
 
                 {/* 6. Margin Track (Current vs Target) */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-80">
-                    <h3 className="text-lg font-bold mb-1 dark:text-white">Margin Leakage Tracker (%)</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Margin Leakage Tracker (%)</h3>
                     <ResponsiveContainer width="100%" height="90%">
                         <ComposedChart data={marginComparisonData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="name" fontSize={10} />
-                            <YAxis fontSize={10} unit="%" />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
+                            <YAxis fontSize={9} stroke="#94a3b8" unit="%" />
                             <Tooltip />
-                            <Legend />
-                            <Bar dataKey="estimado" name="Target CM" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                            <Line type="monotone" dataKey="real" name="Current CM" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
+                            <Bar dataKey="estimado" name="Target CM" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                            <Line type="monotone" dataKey="real" name="Current CM" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', strokeWidth: 1 }} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </div>

@@ -196,9 +196,6 @@ export const ProjectsView: React.FC = () => {
   const handleGenerateAISummary = async () => {
     setIsGeneratingAI(true);
     
-    // Simular retraso de procesamiento para dar sensación de IA
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
     try {
       const projRisks = risks.filter(r => r.projectId === formData.id);
       const highRisks = projRisks.filter(r => r.impact === 'Alto');
@@ -208,82 +205,82 @@ export const ProjectsView: React.FC = () => {
       const totalBudget = Object.values(formData.budget || {}).reduce<number>((a, b) => a + (Number(b) || 0), 0);
       const totalSAP = projExpenses.reduce((s, e) => s + e.amount, 0);
 
-      const pmoComments = (formData.statusHistory || []).filter(h => (h.type || 'PMO') === 'PMO').sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      const techComments = (formData.statusHistory || []).filter(h => h.type === 'Técnico').sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      let generatedSummary = "";
-
-      // 1. Intro
-      if (formData.progress > 80) {
-        generatedSummary += `El proyecto ${formData.name} se encuentra en fase de cierre con un ${formData.progress}% de avance. `;
-      } else if (formData.progress > 0) {
-        generatedSummary += `El proyecto ${formData.name} avanza en etapa de ejecución al ${formData.progress}%. `;
-      } else {
-        generatedSummary += `El proyecto ${formData.name} se encuentra en etapa inicial de planificación. `;
-      }
-
-      // 2. Costos
-      let healthScore = 0; // 0: Good, 1: Warning, 2: Critical
-      const pct = totalBudget > 0 ? ((totalSAP as number) / totalBudget) * 100 : 0;
-      const hasNegative = projExpenses.some(e => e.amount < 0);
-
+      // Pre-calcular salud local por si falla el JSON o la IA
+      let healthScore = 0;
+      const pct = totalBudget > 0 ? (totalSAP / totalBudget) * 100 : 0;
       if (totalBudget > 0) {
-        if (hasNegative || totalSAP < 0) {
-          generatedSummary += `Situación financiera anómala con registros negativos en SAP ($${totalSAP.toLocaleString()}). `;
-          healthScore = 2;
-        } else if (pct > 100) {
-          generatedSummary += `Desvío presupuestario detectado: el consumo del ${pct.toFixed(0)}% ($${totalSAP.toLocaleString()}) ha excedido el presupuesto total de $${totalBudget.toLocaleString()}. `;
-          healthScore = 2;
-        } else if (pct > 80) {
-          generatedSummary += `Consumo presupuestario en nivel de alerta (${pct.toFixed(0)}%), con $${(totalBudget - totalSAP).toLocaleString()} de margen restante. `;
-          if (healthScore < 1) healthScore = 1;
-        } else {
-          generatedSummary += `Finanzas estables con un consumo del ${pct.toFixed(0)}% respecto al total planificado. `;
-        }
+        if (totalSAP < 0 || projExpenses.some(e => e.amount < 0)) healthScore = 2;
+        else if (pct > 100) healthScore = 2;
+        else if (pct > 80) healthScore = 1;
       }
+      if (highRisks.length > 0) healthScore = 2;
+      else if (projRisks.length > 2) healthScore = 1;
 
-      // 3. Riesgos y Cambios
-      if (projRisks.length > 0 || projChanges.length > 0) {
-        generatedSummary += `En la gestión de control, se registran ${projRisks.length} riesgos activos (${highRisks.length} de impacto alto) y ${projChanges.length} controles de cambio. `;
-        if (highRisks.length > 0) {
-          const mainRisk = highRisks[0].description;
-          generatedSummary += `Riesgo crítico detectado: "${mainRisk.length > 120 ? mainRisk.substring(0, 120) + '...' : mainRisk}". `;
-          healthScore = 2;
+      // Construir el prompt con la información completa
+      const prompt = `Genera un análisis y un resumen ejecutivo profesional y holístico en español para el proyecto:
+Proyecto: ${formData.name} (TP-AR: ${formData.opportunityNumber || 'N/A'})
+Progreso Actual: ${formData.progress}%
+Estado: ${formData.status}
+Vertical: ${formData.vertical || 'N/A'}
+Segmento: ${formData.segment || 'N/A'}
+
+Finanzas:
+- Presupuesto de Costos: USD ${totalBudget.toLocaleString()}
+- Gasto Registrado (SAP): USD ${totalSAP.toLocaleString()}
+- Margen CM Planificado: ${formData.cm || 0}%
+
+Riesgos y Problemas:
+${projRisks.length > 0 ? projRisks.map(r => `- [${r.impact}] ${r.description} (Probabilidad: ${r.probability}, Mitigado: ${r.isMitigated ? 'Sí' : 'No'})`).join('\n') : 'Ninguno'}
+
+Control de Cambios:
+${projChanges.length > 0 ? projChanges.map(c => `- [${c.type}] ${c.description} (Fecha: ${c.date})`).join('\n') : 'Ninguno'}
+
+Historial de Comentarios y Actualizaciones (Updates):
+${(formData.statusHistory || []).length > 0 ? (formData.statusHistory || []).map(h => `- [${h.type || 'PMO'}] (${h.createdAt.split('T')[0]}) ${h.createdBy || 'Nelson/PMO'}: "${h.status}"`).join('\n') : 'Ninguno'}
+
+Instrucciones de Respuesta:
+1. Realiza una interpretación holística: analiza avance, desvíos financieros (SAP vs Presupuesto), riesgos activos y la tendencia de comentarios del historial.
+2. Genera un resumen ejecutivo formal de máximo 4 a 5 oraciones.
+3. Determina la salud del proyecto ("Verde", "Amarillo" o "Rojo") basándote en este análisis.
+4. Devuelve la respuesta en formato JSON estrictamente válido con dos claves: "summary" (el texto del resumen ejecutivo en un solo párrafo, sin títulos ni formato markdown) y "health" (debe ser únicamente "Verde", "Amarillo" o "Rojo").
+5. IMPORTANTE: Devuelve únicamente el objeto JSON, sin envolverlo en bloques de código markdown ni agregar texto adicional.`;
+
+      const { data, error: invokeErr } = await supabase.functions.invoke('project-bot', {
+        body: { question: prompt }
+      });
+
+      if (invokeErr) throw invokeErr;
+      if (!data || data.error) throw new Error(data?.error || 'No se recibió respuesta del servidor de IA');
+
+      let generatedSummary = '';
+      let finalHealth = formData.healthStatus || 'Verde';
+
+      try {
+        let text = data.answer || '';
+        text = text.trim();
+        if (text.startsWith('```')) {
+            text = text.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
         }
-        else if (projRisks.length > 2 && healthScore < 1) healthScore = 1;
-      }
-
-      // 4. Comentarios (Análisis de tendencias)
-      if (pmoComments.length > 0 || techComments.length > 0) {
-        const latestPmo = pmoComments[0];
-        const latestTech = techComments[0];
-        const alertWords = ['retraso', 'demora', 'problema', 'bloqueado', 'falta', 'riesgo', 'crítico', 'urgente', 'desvío', 'falla', 'traba'];
-        const positiveWords = ['completado', 'finalizado', 'entregado', 'aprobado', 'éxito', 'listo', 'avanza', 'ok', 'cerrado', 'solucionado', 'aprobación'];
         
-        if (latestPmo) {
-          generatedSummary += `Última actualización PMO: "${latestPmo.status}". `;
+        const parsed = JSON.parse(text);
+        if (parsed.summary) {
+            generatedSummary = parsed.summary;
+        } else {
+            throw new Error('Resumen faltante en el JSON de respuesta');
         }
-        if (latestTech) {
-          generatedSummary += `Estado técnico reportado: "${latestTech.status}". `;
+        if (parsed.health && ['Verde', 'Amarillo', 'Rojo'].includes(parsed.health)) {
+            finalHealth = parsed.health;
         }
-
-        const textCorpus = (formData.statusHistory || []).map(h => h.status.toLowerCase()).join(' ');
-        let alertCount = 0;
-        let positiveCount = 0;
-        alertWords.forEach(w => { if (textCorpus.includes(w)) alertCount++; });
-        positiveWords.forEach(w => { if (textCorpus.includes(w)) positiveCount++; });
-
-        if (alertCount > positiveCount && healthScore < 1) healthScore = 1;
+      } catch (parseErr) {
+        console.warn('AI no devolvió un JSON válido, procesando como texto plano de respaldo:', parseErr);
+        generatedSummary = data.answer || 'No se pudo generar el resumen.';
+        if (formData.healthStatus === 'Auto') {
+            const healthMap: Record<number, 'Verde' | 'Amarillo' | 'Rojo'> = { 0: 'Verde', 1: 'Amarillo', 2: 'Rojo' };
+            finalHealth = healthMap[healthScore];
+        }
       }
 
-      // 5. Gestión de Salud (Solo si está en Automático)
-      let finalHealth = formData.healthStatus;
-      if (formData.healthStatus === 'Auto') {
-        const healthMap: Record<number, 'Verde' | 'Amarillo' | 'Rojo'> = { 0: 'Verde', 1: 'Amarillo', 2: 'Rojo' };
-        finalHealth = healthMap[healthScore];
-      }
-
-      // Persistencia inmediata (para evitar que se pierda al salir del modal)
+      // Persistencia inmediata
       await supabase.from('projects').update({ 
         ai_summary: generatedSummary,
         health_status: finalHealth 
@@ -294,11 +291,11 @@ export const ProjectsView: React.FC = () => {
       // Update local projects list to reflect changes immediately
       setProjects(prev => prev.map(p => p.id === formData.id ? { ...p, aiSummary: generatedSummary, healthStatus: finalHealth } : p));
       
-      showToast('Resumen y Salud actualizados correctamente', 'success');
+      showToast('Resumen y Salud actualizados correctamente por la IA', 'success');
 
     } catch (err: unknown) {
-      console.error('Local Summary Error:', err);
-      showToast('Error al procesar el resumen: ' + (err instanceof Error ? err.message : String(err)), 'error');
+      console.error('AI Summary Error:', err);
+      showToast('Error al generar resumen con IA: ' + (err instanceof Error ? err.message : String(err)), 'error');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -859,17 +856,26 @@ export const ProjectsView: React.FC = () => {
         <div className="flex gap-6 overflow-x-auto pb-6">
           {['En ejecución', 'Soporte', 'Intervención temprana', 'Finalizado', 'POC'].map(status => {
             const colProjects = filteredProjects.filter(p => (p.status || 'En ejecución') === status);
-            const borderColor = status === 'En ejecución' ? 'border-green-500' : status === 'Soporte' ? 'border-yellow-500' : status === 'Intervención temprana' ? 'border-blue-500' : status === 'POC' ? 'border-purple-500' : 'border-gray-400';
+            const getColAccent = (st: string) => {
+                switch(st) {
+                    case 'En ejecución': return { border: 'border-t-emerald-500', text: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 dark:text-emerald-400' };
+                    case 'Soporte': return { border: 'border-t-amber-500', text: 'text-amber-600 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400' };
+                    case 'Intervención temprana': return { border: 'border-t-brand-cyan', text: 'text-brand-cyan bg-sky-50 dark:bg-sky-950/20 dark:text-sky-400' };
+                    case 'POC': return { border: 'border-t-violet-500', text: 'text-violet-600 bg-violet-50 dark:bg-violet-950/20 dark:text-violet-400' };
+                    default: return { border: 'border-t-slate-400', text: 'text-slate-600 bg-slate-100 dark:bg-slate-800' };
+                }
+            };
+            const accent = getColAccent(status);
 
             return (
-              <div key={status} className="kanban-col min-w-[300px] w-80 bg-gray-100 dark:bg-slate-900 rounded-xl p-4 flex flex-col border dark:border-slate-700">
-                <h3 className="font-bold text-gray-600 dark:text-gray-300 mb-4 flex justify-between items-center sticky top-0 bg-gray-100 dark:bg-slate-900 z-10 py-2">
+              <div key={status} className="kanban-col min-w-[300px] w-80 bg-slate-100/50 dark:bg-slate-900/30 rounded-2xl p-4 flex flex-col border border-slate-100 dark:border-dark-border/30">
+                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex justify-between items-center sticky top-0 bg-slate-50/10 dark:bg-slate-950/10 backdrop-blur-sm z-10 py-2">
                   {status}
-                  <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded text-xs shadow-sm font-mono">{colProjects.length}</span>
+                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold font-mono ${accent.text}`}>{colProjects.length}</span>
                 </h3>
                 <div className="space-y-3 flex-1 overflow-y-auto max-h-[70vh] scrollbar-thin px-1">
                   {colProjects.map(p => (
-                    <div key={p.id} className={`${getClientBgClass(p.clientName)} p-4 rounded-lg shadow-sm border-l-4 ${borderColor} cursor-pointer hover:shadow-md transition-all relative group transform hover:-translate-y-1`}>
+                    <div key={p.id} className={`bg-white dark:bg-dark-card p-4 rounded-2xl shadow-sm border border-slate-100/80 dark:border-dark-border/40 border-t-4 ${accent.border} cursor-pointer hover:shadow-premium hover:border-slate-200 dark:hover:border-slate-700 transition-all relative group transform hover:-translate-y-0.5`}>
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           {(() => {

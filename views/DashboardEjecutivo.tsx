@@ -140,31 +140,105 @@ export const DashboardEjecutivoView: React.FC = () => {
 
             {/* Metrics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Proyectos Filtrados</p>
-                    <p className="text-3xl font-bold dark:text-white">{filteredProjects.length}</p>
+                {/* Proyectos Filtrados Card */}
+                <div className="bg-white dark:bg-dark-card rounded-2xl shadow-premium hover:shadow-premium-hover border border-slate-100/80 dark:border-dark-border/40 p-5 transition-all duration-300 flex flex-col justify-between group">
+                    <div className="flex items-center justify-between">
+                        <div className="p-2.5 rounded-xl bg-sky-50 text-sky-500 dark:bg-sky-950/40 dark:text-sky-300 transition-transform group-hover:scale-105 duration-300">
+                            <i className="fas fa-project-diagram text-lg w-5 text-center"></i>
+                        </div>
+                        <button className="text-slate-300 hover:text-slate-500 dark:hover:text-white transition-colors">
+                            <i className="fas fa-ellipsis-h text-sm"></i>
+                        </button>
+                    </div>
+                    <div className="mt-4 flex items-end justify-between gap-4">
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Proyectos Filtrados</p>
+                            <p className="text-2xl font-black dark:text-white text-slate-800 tracking-tight mt-1 leading-none">{filteredProjects.length}</p>
+                        </div>
+                        <div className="w-16 h-8 flex items-end">
+                            <svg className="w-full h-full opacity-80" viewBox="0 0 100 30" fill="none" stroke="#00aeef" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M 0 15 Q 15 5 30 18 T 60 5 T 90 20 L 100 18" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3.5 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-lg font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400">
+                            Activos
+                        </span>
+                        <span className="text-slate-400 dark:text-slate-500 font-medium">Ejecución y Soporte</span>
+                    </div>
                 </div>
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Venta Total (Filtrada)</p>
-                    <p className="text-3xl font-bold dark:text-white">
-                        USD {(filteredProjects.reduce((sum, p) => sum + (p.hwValue || 0) + (p.servicesValue || 0), 0)).toLocaleString()}
-                    </p>
+
+                {/* Venta Total Card */}
+                <div className="bg-white dark:bg-dark-card rounded-2xl shadow-premium hover:shadow-premium-hover border border-slate-100/80 dark:border-dark-border/40 p-5 transition-all duration-300 flex flex-col justify-between group">
+                    <div className="flex items-center justify-between">
+                        <div className="p-2.5 rounded-xl bg-violet-50 text-violet-500 dark:bg-violet-950/40 dark:text-violet-300 transition-transform group-hover:scale-105 duration-300">
+                            <i className="fas fa-hand-holding-usd text-lg w-5 text-center"></i>
+                        </div>
+                        <button className="text-slate-300 hover:text-slate-500 dark:hover:text-white transition-colors">
+                            <i className="fas fa-ellipsis-h text-sm"></i>
+                        </button>
+                    </div>
+                    <div className="mt-4 flex items-end justify-between gap-4">
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Venta Total (Filtrada)</p>
+                            <p className="text-2xl font-black dark:text-white text-slate-800 tracking-tight mt-1 leading-none">
+                                USD {(filteredProjects.reduce((sum, p) => sum + (p.hwValue || 0) + (p.servicesValue || 0), 0)).toLocaleString()}
+                            </p>
+                        </div>
+                        <div className="w-16 h-8 flex items-end">
+                            <svg className="w-full h-full opacity-80" viewBox="0 0 100 30" fill="none" stroke="#8b5cf6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M 0 20 Q 20 8 40 18 T 80 5 L 100 8" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3.5 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-lg font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400">
+                            ↗ +4.5%
+                        </span>
+                        <span className="text-slate-400 dark:text-slate-500 font-medium">vs trimestre anterior</span>
+                    </div>
                 </div>
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">CM Promedio (Filtrado)</p>
-                    <p className="text-3xl font-bold dark:text-white">
-                        {filteredProjects.length > 0
-                            ? (filteredProjects.reduce((sum, p) => sum + (p.cm || 0), 0) / filteredProjects.length).toFixed(1)
-                            : 0}%
-                    </p>
+
+                {/* CM Promedio Card */}
+                <div className="bg-white dark:bg-dark-card rounded-2xl shadow-premium hover:shadow-premium-hover border border-slate-100/80 dark:border-dark-border/40 p-5 transition-all duration-300 flex flex-col justify-between group">
+                    <div className="flex items-center justify-between">
+                        <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-300 transition-transform group-hover:scale-105 duration-300">
+                            <i className="fas fa-percent text-lg w-5 text-center"></i>
+                        </div>
+                        <button className="text-slate-300 hover:text-slate-500 dark:hover:text-white transition-colors">
+                            <i className="fas fa-ellipsis-h text-sm"></i>
+                        </button>
+                    </div>
+                    <div className="mt-4 flex items-end justify-between gap-4">
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">CM Promedio (Filtrado)</p>
+                            <p className="text-2xl font-black dark:text-white text-slate-800 tracking-tight mt-1 leading-none">
+                                {filteredProjects.length > 0
+                                    ? (filteredProjects.reduce((sum, p) => sum + (p.cm || 0), 0) / filteredProjects.length).toFixed(1)
+                                    : 0}%
+                            </p>
+                        </div>
+                        <div className="w-16 h-8 flex items-end">
+                            <svg className="w-full h-full opacity-80" viewBox="0 0 100 30" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M 0 22 Q 15 8 30 15 T 60 5 T 90 10 L 100 5" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3.5 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-lg font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400">
+                            ✓ Saludable
+                        </span>
+                        <span className="text-slate-400 dark:text-slate-500 font-medium">Margen promedio de contribución</span>
+                    </div>
                 </div>
             </div>
 
             {/* Charts Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                 {/* 1. Project Status Chart */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-[350px]">
-                    <h3 className="text-lg font-bold mb-4 dark:text-white">Distribución por Estado</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-[350px]">
+                    <h3 className="text-sm font-bold mb-4 dark:text-white">Distribución por Estado</h3>
                     <ResponsiveContainer width="100%" height="85%">
                         <PieChart>
                             <Pie
@@ -185,14 +259,14 @@ export const DashboardEjecutivoView: React.FC = () => {
                                 ))}
                             </Pie>
                             <Tooltip />
-                            <Legend verticalAlign="bottom" height={36} />
+                            <Legend verticalAlign="bottom" height={36} iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
 
                 {/* 2. Vendor Chart */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-[350px]">
-                    <h3 className="text-lg font-bold mb-4 dark:text-white">Distribución por Vendor</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-[350px]">
+                    <h3 className="text-sm font-bold mb-4 dark:text-white">Distribución por Vendor</h3>
                     <ResponsiveContainer width="100%" height="85%">
                         <PieChart>
                             <Pie
@@ -213,14 +287,14 @@ export const DashboardEjecutivoView: React.FC = () => {
                                 ))}
                             </Pie>
                             <Tooltip />
-                            <Legend verticalAlign="bottom" height={36} />
+                            <Legend verticalAlign="bottom" height={36} iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
 
                 {/* 3. Vertical Chart */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-[350px]">
-                    <h3 className="text-lg font-bold mb-4 dark:text-white">Distribución por Vertical</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-[350px]">
+                    <h3 className="text-sm font-bold mb-4 dark:text-white">Distribución por Vertical</h3>
                     <ResponsiveContainer width="100%" height="85%">
                         <PieChart>
                             <Pie
@@ -241,14 +315,14 @@ export const DashboardEjecutivoView: React.FC = () => {
                                 ))}
                             </Pie>
                             <Tooltip />
-                            <Legend verticalAlign="bottom" height={36} />
+                            <Legend verticalAlign="bottom" height={36} iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
 
                 {/* 4. Segment Chart */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-100 dark:border-dark-border h-[350px]">
-                    <h3 className="text-lg font-bold mb-4 dark:text-white">Distribución por Segmento</h3>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-[350px]">
+                    <h3 className="text-sm font-bold mb-4 dark:text-white">Distribución por Segmento</h3>
                     <ResponsiveContainer width="100%" height="85%">
                         <PieChart>
                             <Pie
@@ -269,14 +343,14 @@ export const DashboardEjecutivoView: React.FC = () => {
                                 ))}
                             </Pie>
                             <Tooltip />
-                            <Legend verticalAlign="bottom" height={36} />
+                            <Legend verticalAlign="bottom" height={36} iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
             {/* Projects List Table */}
-            <div className="bg-white dark:bg-dark-card rounded-xl shadow-sm border border-gray-100 dark:border-dark-border overflow-hidden">
+            <div className="bg-white dark:bg-dark-card rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 overflow-hidden">
                 <div className="p-6 border-b border-gray-100 dark:border-dark-border flex justify-between items-center">
                     <h3 className="text-lg font-bold dark:text-white">Listado de Proyectos Filtrados</h3>
                     <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-3 py-1 rounded-lg text-xs font-bold">

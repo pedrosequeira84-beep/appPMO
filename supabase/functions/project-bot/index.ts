@@ -254,7 +254,7 @@ ${precomputedCapacitySummary}
     // Llamar a Vertex AI (Agent Platform) via REST API - usa facturación de Google Cloud
     const projectId = Deno.env.get('GOOGLE_CLOUD_PROJECT') || 'bgh-pmo-ai'
     const location = 'us-central1'
-    const modelId = 'gemini-3.5-flash-lite' // Gemini 3.5 Flash Lite en Vertex AI
+    const modelId = 'gemini-2.5-flash' // Gemini 2.5 Flash en Vertex AI
     const vertexUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:generateContent`
 
     const vertexResponse = await fetch(vertexUrl, {

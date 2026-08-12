@@ -5,13 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>App PMO v3.9.5 - Sistema Integral</title>
   <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
           colors: {
+            brand: {
+              navy: '#081a31',
+              'navy-light': '#0d2543',
+              cyan: '#00aeef',
+              'cyan-light': '#e0f7ff',
+              blue: '#0082ff',
+              bg: '#f8fafc',
+              border: '#f1f5f9',
+              muted: '#7d8fb3'
+            },
             dark: { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', border: '#334155' }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif']
+          },
+          boxShadow: {
+            'premium': '0 10px 30px -5px rgba(0, 0, 0, 0.03), 0 1px 3px 0 rgba(0, 0, 0, 0.01)',
+            'premium-hover': '0 20px 40px -5px rgba(0, 0, 0, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.02)'
           }
         }
       }
@@ -26,9 +46,103 @@
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     .dark ::-webkit-scrollbar-thumb { background: #475569; }
     .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-    body { font-family: 'Inter', sans-serif; }
+    body { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
     .fade-in { animation: fadeIn 0.3s ease-in-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Global UI Overrides to match Screenshot design */
+    .rounded-xl {
+      border-radius: 16px !important;
+    }
+    .rounded-lg {
+      border-radius: 12px !important;
+    }
+    .shadow-sm, .shadow-md {
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.02), 0 1px 2px 0 rgba(0, 0, 0, 0.01) !important;
+    }
+    
+    /* Inputs, Selects, Textareas */
+    input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="date"], select, textarea {
+      font-size: 13px !important;
+      border-radius: 12px !important;
+      border: 1px solid #e2e8f0 !important;
+      padding: 10px 14px;
+      transition: all 0.2s ease !important;
+    }
+    input[type="text"]:focus, select:focus, textarea:focus {
+      border-color: #00aeef !important;
+      outline: none !important;
+      box-shadow: 0 0 0 3px rgba(0, 174, 239, 0.12) !important;
+    }
+    .dark input, .dark select, .dark textarea {
+      border-color: #334155 !important;
+      background-color: #1e293b !important;
+      color: #fff !important;
+    }
+
+    /* Premium Modern Tables styling */
+    table {
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      width: 100%;
+    }
+    th {
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.06em !important;
+      color: #7d8fb3 !important;
+      padding: 14px 20px !important;
+      border-bottom: 1px solid #f1f5f9 !important;
+      background-color: #f8fafc !important;
+    }
+    .dark th {
+      background-color: #1e293b !important;
+      border-bottom: 1px solid #334155 !important;
+      color: #64748b !important;
+    }
+    td {
+      padding: 12px 20px !important;
+      border-bottom: 1px solid #f1f5f9 !important;
+      font-size: 13px !important;
+    }
+    .dark td {
+      border-bottom: 1px solid #334155 !important;
+    }
+    tr:hover td {
+      background-color: #f8fafc !important;
+    }
+    .dark tr:hover td {
+      background-color: rgba(30, 41, 59, 0.2) !important;
+    }
+
+    /* Gradient Buttons styling */
+    .bg-blue-600, .bg-indigo-600, button.btn-primary {
+      background-image: linear-gradient(135deg, #00c2ff 0%, #0082ff 100%) !important;
+      border: none !important;
+      color: #ffffff !important;
+      border-radius: 12px !important;
+    }
+    .bg-blue-600:hover, .bg-indigo-600:hover, button.btn-primary:hover {
+      opacity: 0.95 !important;
+      box-shadow: 0 8px 20px -4px rgba(0, 174, 239, 0.3) !important;
+    }
+    .bg-blue-700, .bg-indigo-700 {
+      background-image: linear-gradient(135deg, #00adef 0%, #0066cc 100%) !important;
+      border: none !important;
+      border-radius: 12px !important;
+    }
+    
+    /* Specific padding overrides to resolve icon overlaps */
+    input.pl-9 {
+      padding-left: 2.25rem !important;
+    }
+    input.pl-10 {
+      padding-left: 2.5rem !important;
+    }
+    input.pl-12 {
+      padding-left: 3rem !important;
+    }
   </style>
 <script type="importmap">
 {
