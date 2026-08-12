@@ -193,7 +193,7 @@ export const ProjectsView: React.FC = () => {
 
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
-  const handleGenerateAISummary = async () => {
+  const handleGenerateAISummary = async (mode: 'pmo' | 'tecnico' | 'unificado' = 'unificado') => {
     setIsGeneratingAI(true);
     
     try {
@@ -201,6 +201,7 @@ export const ProjectsView: React.FC = () => {
       const highRisks = projRisks.filter(r => r.impact === 'Alto');
       const projChanges = changes.filter(c => c.projectId === formData.id);
       const projExpenses = expenses.filter(e => e.projectId === formData.id);
+      const projMilestones = milestones.filter(m => m.projectId === formData.id);
       
       const totalBudget = Object.values(formData.budget || {}).reduce<number>((a, b) => a + (Number(b) || 0), 0);
       const totalSAP = projExpenses.reduce((s, e) => s + e.amount, 0);
@@ -216,34 +217,84 @@ export const ProjectsView: React.FC = () => {
       if (highRisks.length > 0) healthScore = 2;
       else if (projRisks.length > 2) healthScore = 1;
 
-      // Construir el prompt con la información completa
-      const prompt = `Genera un análisis y un resumen ejecutivo profesional y holístico en español para el proyecto:
-Proyecto: ${formData.name} (TP-AR: ${formData.opportunityNumber || 'N/A'})
+      // Información base del proyecto
+      const baseInfo = `Proyecto: ${formData.name} (TP-AR: ${formData.opportunityNumber || 'N/A'})
 Progreso Actual: ${formData.progress}%
-Estado: ${formData.status}
+Estado del Proyecto: ${formData.status}
 Vertical: ${formData.vertical || 'N/A'}
-Segmento: ${formData.segment || 'N/A'}
+Segmento: ${formData.segment || 'N/A'}`;
 
-Finanzas:
+      // Reglas de lenguaje sin palabras rebuscadas
+      const simpleLanguageRules = `
+Instrucciones críticas de redacción:
+1. Escribe de forma muy clara, sencilla y directa. Usa un lenguaje natural y cotidiano, como le hablarías a un colega.
+2. Evita por completo palabras rebuscadas, pretenciosas o términos corporativos vacíos (NO uses palabras como "holístico", "disrupción", "sinergia", "anómalo", "concomitante", "disruptivo", "optimización", "paradigma", "mitigar", "desvío anómalo", "ecosistema"). Usa en su lugar términos cotidianos como "general", "cambios", "colaboración", "inusual", "problema", "mejora", "esquema".
+3. El resumen debe estar en español y ser redactado en un único párrafo de texto fluido (máximo 4 a 5 oraciones).
+4. No agregues saludos, firmas, títulos ni formato markdown (como negritas, viñetas, listas o bloques de código), solo escribe el párrafo plano.
+5. Determina la salud del proyecto ("Verde", "Amarillo" o "Rojo") basándote en la información analizada.
+6. Devuelve la respuesta en formato JSON estrictamente válido con dos claves: "summary" (el texto del resumen) y "health" (debe ser únicamente "Verde", "Amarillo" o "Rojo"). No agregues bloques de código markdown como \`\`\`json, solo devuelve el objeto JSON puro.`;
+
+      let prompt = '';
+
+      if (mode === 'pmo') {
+        prompt = `Genera un análisis y un resumen de gestión PMO para el siguiente proyecto:
+${baseInfo}
+
+Finanzas y Presupuesto:
 - Presupuesto de Costos: USD ${totalBudget.toLocaleString()}
-- Gasto Registrado (SAP): USD ${totalSAP.toLocaleString()}
+- Gasto Real Registrado (SAP): USD ${totalSAP.toLocaleString()}
 - Margen CM Planificado: ${formData.cm || 0}%
 
-Riesgos y Problemas:
-${projRisks.length > 0 ? projRisks.map(r => `- [${r.impact}] ${r.description} (Probabilidad: ${r.probability}, Mitigado: ${r.isMitigated ? 'Sí' : 'No'})`).join('\n') : 'Ninguno'}
+Riesgos Activos:
+${projRisks.length > 0 ? projRisks.map(r => `- [Impacto: ${r.impact}] ${r.description} (Probabilidad: ${r.probability}, Solucionado/Mitigado: ${r.isMitigated ? 'Sí' : 'No'})`).join('\n') : 'Ninguno'}
 
 Control de Cambios:
-${projChanges.length > 0 ? projChanges.map(c => `- [${c.type}] ${c.description} (Fecha: ${c.date})`).join('\n') : 'Ninguno'}
+${projChanges.length > 0 ? projChanges.map(c => `- [Tipo: ${c.type}] ${c.description} (Fecha: ${c.date})`).join('\n') : 'Ninguno'}
 
-Historial de Comentarios y Actualizaciones (Updates):
+Hitos de Facturación:
+${projMilestones.length > 0 ? projMilestones.map(m => `- Hito: ${m.description} | Monto: ${m.currency || 'USD'} ${m.amount} | Estado: ${m.isReceived ? 'Cobrado' : 'Pendiente'} | Fecha: ${m.date}`).join('\n') : 'Ninguno'}
+
+Historial de Comentarios y Actualizaciones:
 ${(formData.statusHistory || []).length > 0 ? (formData.statusHistory || []).map(h => `- [${h.type || 'PMO'}] (${h.createdAt.split('T')[0]}) ${h.createdBy || 'Nelson/PMO'}: "${h.status}"`).join('\n') : 'Ninguno'}
 
-Instrucciones de Respuesta:
-1. Realiza una interpretación holística: analiza avance, desvíos financieros (SAP vs Presupuesto), riesgos activos y la tendencia de comentarios del historial.
-2. Genera un resumen ejecutivo formal de máximo 4 a 5 oraciones.
-3. Determina la salud del proyecto ("Verde", "Amarillo" o "Rojo") basándote en este análisis.
-4. Devuelve la respuesta en formato JSON estrictamente válido con dos claves: "summary" (el texto del resumen ejecutivo en un solo párrafo, sin títulos ni formato markdown) y "health" (debe ser únicamente "Verde", "Amarillo" o "Rojo").
-5. IMPORTANTE: Devuelve únicamente el objeto JSON, sin envolverlo en bloques de código markdown ni agregar texto adicional.`;
+Enfoque del resumen PMO: Concéntrate en la situación financiera (presupuesto vs gastos reales), el avance de facturación (hitos), los riesgos que amenazan los plazos y los cambios de alcance registrados, sin olvidar los comentarios recientes.
+${simpleLanguageRules}`;
+
+      } else if (mode === 'tecnico') {
+        prompt = `Genera un resumen orientado puramente a aspectos técnicos para el siguiente proyecto:
+${baseInfo}
+
+Historial de Comentarios y Actualizaciones (Única fuente de información permitida):
+${(formData.statusHistory || []).length > 0 ? (formData.statusHistory || []).map(h => `- [${h.type || 'PMO'}] (${h.createdAt.split('T')[0]}) ${h.createdBy || 'Nelson/PMO'}: "${h.status}"`).join('\n') : 'Ninguno'}
+
+Enfoque del resumen Técnico: Basándote exclusivamente en el historial de comentarios y actualizaciones provisto, describe qué tareas técnicas se han realizado, el estado técnico de los trabajos y los próximos pasos. NO menciones presupuestos, gastos de SAP, riesgos de negocio, hitos de facturación ni controles de cambios.
+${simpleLanguageRules}`;
+
+      } else {
+        // Unificado
+        prompt = `Genera un análisis y un resumen ejecutivo integrado y unificado para el siguiente proyecto:
+${baseInfo}
+
+Finanzas y Presupuesto:
+- Presupuesto de Costos: USD ${totalBudget.toLocaleString()}
+- Gasto Real Registrado (SAP): USD ${totalSAP.toLocaleString()}
+- Margen CM Planificado: ${formData.cm || 0}%
+
+Riesgos Activos:
+${projRisks.length > 0 ? projRisks.map(r => `- [Impacto: ${r.impact}] ${r.description} (Probabilidad: ${r.probability}, Solucionado/Mitigado: ${r.isMitigated ? 'Sí' : 'No'})`).join('\n') : 'Ninguno'}
+
+Control de Cambios:
+${projChanges.length > 0 ? projChanges.map(c => `- [Tipo: ${c.type}] ${c.description} (Fecha: ${c.date})`).join('\n') : 'Ninguno'}
+
+Hitos de Facturación:
+${projMilestones.length > 0 ? projMilestones.map(m => `- Hito: ${m.description} | Monto: ${m.currency || 'USD'} ${m.amount} | Estado: ${m.isReceived ? 'Cobrado' : 'Pendiente'} | Fecha: ${m.date}`).join('\n') : 'Ninguno'}
+
+Historial de Comentarios y Actualizaciones:
+${(formData.statusHistory || []).length > 0 ? (formData.statusHistory || []).map(h => `- [${h.type || 'PMO'}] (${h.createdAt.split('T')[0]}) ${h.createdBy || 'Nelson/PMO'}: "${h.status}"`).join('\n') : 'Ninguno'}
+
+Enfoque del resumen Unificado: Junta y describe toda la situación general del proyecto de manera balanceada (dinero consumido vs presupuesto, cobros, riesgos críticos, cambios y comentarios técnicos).
+${simpleLanguageRules}`;
+      }
 
       const { data, error: invokeErr } = await supabase.functions.invoke('project-bot', {
         body: { question: prompt }
@@ -1156,24 +1207,45 @@ Instrucciones de Respuesta:
 
               {/* Resumen IA */}
               <div className="col-span-full mt-4 bg-indigo-50/30 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
-                <div className="flex justify-between items-center mb-3">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
                   <label className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2">
                     <i className="fas fa-magic"></i> Resumen Ejecutivo (IA)
                   </label>
-                  <button
-                    onClick={handleGenerateAISummary}
-                    disabled={isGeneratingAI}
-                    className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all shadow-md flex items-center gap-2 ${isGeneratingAI
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 active:scale-95'
-                      }`}
-                  >
-                    {isGeneratingAI ? (
-                      <><i className="fas fa-spinner fa-spin"></i> GENERANDO...</>
-                    ) : (
-                      <><i className="fas fa-sparkles"></i> GENERAR RESUMEN AUTOMÁTICO</>
-                    )}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleGenerateAISummary('pmo')}
+                      disabled={isGeneratingAI}
+                      className={`text-[9px] font-black px-3 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${isGeneratingAI
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-102 active:scale-98'
+                        }`}
+                      title="Generar resumen de gestión PMO (incluye costos, hitos, riesgos, cambios y comentarios)"
+                    >
+                      {isGeneratingAI ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-file-invoice"></i>} RESUMEN PMO
+                    </button>
+                    <button
+                      onClick={() => handleGenerateAISummary('tecnico')}
+                      disabled={isGeneratingAI}
+                      className={`text-[9px] font-black px-3 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${isGeneratingAI
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-102 active:scale-98'
+                        }`}
+                      title="Generar resumen técnico (incluye únicamente el historial de comentarios)"
+                    >
+                      {isGeneratingAI ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-tools"></i>} RESUMEN TÉCNICO
+                    </button>
+                    <button
+                      onClick={() => handleGenerateAISummary('unificado')}
+                      disabled={isGeneratingAI}
+                      className={`text-[9px] font-black px-3 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${isGeneratingAI
+                        ? 'bg-gradient-to-r from-brand-cyan to-brand-blue opacity-50 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-brand-cyan to-brand-blue text-white hover:brightness-110 hover:scale-102 active:scale-98'
+                        }`}
+                      title="Generar resumen unificado (integra finanzas, riesgos, cambios y comentarios)"
+                    >
+                      {isGeneratingAI ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-compress-alt"></i>} UNIFICADO
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   placeholder="El resumen se generará automáticamente basándose en el historial de status..."
