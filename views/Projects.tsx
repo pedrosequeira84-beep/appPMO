@@ -26,7 +26,7 @@ const CLIENT_COLORS = [
 
 export const ProjectsView: React.FC = () => {
   const {
-    projects, setProjects, changes, showToast, user, risks, lessons,
+    projects, setProjects, changes, showToast, user, risks, lessons, milestones,
     expenses, executiveFilters, setExecutiveFilters, capacityData, team, setCurrentView
   } = useApp();
 
