@@ -1004,7 +1004,7 @@ export const CapacityView: React.FC = () => {
                                     const isHoliday = ARG_HOLIDAYS.includes(iso);
                                     const isExtraDay = isWeekend || isHoliday;
                                     return (
-                                        <th key={iso} className={`sticky top-0 z-30 border-b dark:border-slate-700 w-[50px] p-3 text-center ${isExtraDay ? 'bg-amber-50/60 dark:bg-amber-900/10' : 'bg-white dark:bg-dark-card'}`}>
+                                        <th key={iso} className={`sticky top-0 z-30 border-b dark:border-slate-700 w-[58px] p-3 text-center ${isExtraDay ? 'bg-amber-50/60 dark:bg-amber-900/10' : 'bg-white dark:bg-dark-card'}`}>
                                             <div className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">{name}</div>
                                             <div className={`text-[15px] font-black ${isExtraDay ? 'text-amber-400 dark:text-amber-500' : 'text-gray-800 dark:text-white'}`}>{day}</div>
                                         </th>
