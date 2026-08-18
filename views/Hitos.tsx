@@ -547,7 +547,7 @@ export const HitosView: React.FC = () => {
                 project_id: formData.projectId,
                 description: formData.description,
                 amount: Number(formData.amount),
-                date: editingMilestone ? editingMilestone.date : formData.date, // theoretical date never changes after creation
+                date: editingMilestone && !isAdmin ? editingMilestone.date : formData.date, // solo el admin puede editar la fecha teórica de un hito ya creado
                 real_date: formData.realDate || null,
                 received_amount: Number(formData.receivedAmount || 0),
                 is_received: formData.isReceived,
