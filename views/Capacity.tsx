@@ -1142,7 +1142,7 @@ export const CapacityView: React.FC = () => {
                                                                         autoFocus
                                                                         type="number"
                                                                         disabled={isSaving}
-                                                                        className="w-full h-full text-center bg-indigo-50 dark:bg-indigo-900/20 text-xs font-black outline-none border-none text-indigo-600 dark:text-indigo-300 disabled:opacity-50"
+                                                                        className="w-full h-full !p-0 text-center bg-indigo-50 dark:bg-indigo-900/20 text-xs font-black outline-none !border-none text-indigo-600 dark:text-indigo-300 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                                         value={inlineHours}
                                                                         onChange={e => setInlineHours(e.target.value)}
                                                                         onBlur={() => saveAssignment(inlineHours, inlineCell)}

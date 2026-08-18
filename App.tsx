@@ -264,7 +264,7 @@ const MainLayout: React.FC = () => {
                                     {isAdmin ? 'PMO Admin' : 'PMO Integrante'}
                                 </span>
                             </div>
-                            <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-tr from-brand-cyan to-brand-blue flex items-center justify-center text-white text-xs font-bold border-2 border-white dark:border-dark-card shadow-md">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-brand-cyan to-brand-blue flex items-center justify-center text-white text-xs font-bold border-2 border-white dark:border-dark-card shadow-md">
                                 {user?.email?.charAt(0).toUpperCase()}
                             </div>
                         </div>

@@ -141,8 +141,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, toggleMobile }) => {
       <div className="p-4 border-t border-brand-navy-light/40 bg-brand-navy">
         <div className="flex items-center justify-between mb-4 px-2">
           <span className="text-xs text-slate-400">Modo Oscuro</span>
-          <button onClick={toggleDarkMode} className="w-10 h-5.5 rounded-full bg-slate-700 flex items-center transition-colors focus:outline-none ring-2 ring-transparent focus:ring-brand-cyan">
-            <div className={`w-4.5 h-4.5 rounded-full bg-white shadow-md transform transition-transform ${darkMode ? 'translate-x-4.5' : 'translate-x-0.5'}`}></div>
+          <button onClick={toggleDarkMode} className="w-10 h-6 rounded-full bg-slate-700 flex items-center transition-colors focus:outline-none ring-2 ring-transparent focus:ring-brand-cyan shrink-0">
+            <div className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0.5'}`}></div>
           </button>
         </div>
         <button onClick={() => window.location.reload()} className="w-full py-2 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs transition-colors mb-2 font-medium" onMouseDown={async (e) => {
