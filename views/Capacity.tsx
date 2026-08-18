@@ -1142,7 +1142,7 @@ export const CapacityView: React.FC = () => {
                                                                         autoFocus
                                                                         type="number"
                                                                         disabled={isSaving}
-                                                                        className="w-full h-full text-center bg-indigo-50 dark:bg-indigo-900/20 text-xs font-black outline-none border-none text-indigo-600 disabled:opacity-50"
+                                                                        className="w-full h-full text-center bg-indigo-50 dark:bg-indigo-900/20 text-xs font-black outline-none border-none text-indigo-600 dark:text-indigo-300 disabled:opacity-50"
                                                                         value={inlineHours}
                                                                         onChange={e => setInlineHours(e.target.value)}
                                                                         onBlur={() => saveAssignment(inlineHours, inlineCell)}
@@ -1549,7 +1549,7 @@ export const CapacityView: React.FC = () => {
                             <select 
                                 value={assignType === 'project' ? 'project' : assignType} 
                                 onChange={e => setAssignType(e.target.value)} 
-                                className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-slate-800 dark:bg-slate-900 text-sm font-bold focus:border-indigo-600 outline-none transition-all appearance-none bg-no-repeat bg-[right_1rem_center]"
+                                className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-slate-800 dark:bg-slate-900 text-sm font-bold text-gray-900 dark:text-white focus:border-indigo-600 outline-none transition-all appearance-none bg-no-repeat bg-[right_1rem_center]"
                                 style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236366f1\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundSize: '1.2em' }}
                             >
                                 <option value="project">Proyecto Cliente</option>
@@ -1567,15 +1567,15 @@ export const CapacityView: React.FC = () => {
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Cantidad HS</label>
-                            <input 
-                                type="number" 
-                                value={assignHours} 
-                                onChange={e => setAssignHours(e.target.value)} 
-                                className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-slate-800 dark:bg-slate-900 text-sm font-black focus:border-indigo-600 outline-none transition-all" 
-                                placeholder="Ej: 8" 
-                                min="0" 
-                                max="24" 
-                                step="0.5" 
+                            <input
+                                type="number"
+                                value={assignHours}
+                                onChange={e => setAssignHours(e.target.value)}
+                                className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-slate-800 dark:bg-slate-900 text-sm font-black text-gray-900 dark:text-white focus:border-indigo-600 outline-none transition-all"
+                                placeholder="Ej: 8"
+                                min="0"
+                                max="24"
+                                step="0.5"
                             />
                         </div>
                     </div>
@@ -1633,7 +1633,7 @@ export const CapacityView: React.FC = () => {
                         <textarea 
                             value={assignObs} 
                             onChange={e => setAssignObs(e.target.value)} 
-                            className="w-full p-4 rounded-xl border-2 border-gray-100 dark:border-slate-800 dark:bg-slate-900 text-sm font-medium focus:border-indigo-600 outline-none transition-all min-h-[120px] resize-none" 
+                            className="w-full p-4 rounded-xl border-2 border-gray-100 dark:border-slate-800 dark:bg-slate-900 text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-600 outline-none transition-all min-h-[120px] resize-none"
                             placeholder="¿En qué estuviste trabajando?" 
                         />
                     </div>
@@ -1647,7 +1647,7 @@ export const CapacityView: React.FC = () => {
                         <select 
                             value={replicateOption} 
                             onChange={e => setReplicateOption(e.target.value)}
-                            className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-bold focus:border-indigo-600 outline-none transition-all"
+                            className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-bold text-gray-900 dark:text-white focus:border-indigo-600 outline-none transition-all"
                         >
                             <option value="none">No replicar (Solo hoy)</option>
                             <option value="week">Replicar toda la semana (L a V)</option>

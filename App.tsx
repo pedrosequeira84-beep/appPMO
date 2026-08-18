@@ -39,6 +39,57 @@ const MainLayout: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Generar feeds de cambios recientes. Declarado antes del `if (!user)` para no violar
+    // las Rules of Hooks (un hook no puede quedar detrás de un return condicional).
+    const systemNotifications = React.useMemo(() => {
+        const list: Array<{ id: string; type: 'change' | 'risk' | 'comment'; message: string; date: string; title: string; linkView: string }> = [];
+
+        // 1. Changes
+        changes.forEach(c => {
+            const proj = projects.find(p => p.id === c.projectId);
+            list.push({
+                id: `change-${c.id}`,
+                type: 'change',
+                title: 'Control de Cambio',
+                message: `Proyecto "${proj?.name || 'Desconocido'}": ${c.description} (Reg: ${c.registrationNumber || 'S/N'})`,
+                date: c.date || c.createdAt || '',
+                linkView: 'cambios'
+            });
+        });
+
+        // 2. Risks
+        risks.forEach(r => {
+            const proj = projects.find(p => p.id === r.projectId);
+            list.push({
+                id: `risk-${r.id}`,
+                type: 'risk',
+                title: `Alerta de Riesgo [${r.impact}]`,
+                message: `Proyecto "${proj?.name || 'Desconocido'}": ${r.description}`,
+                date: r.date || r.createdAt || '',
+                linkView: 'riesgos'
+            });
+        });
+
+        // 3. Status History Updates (PMO y Técnicos)
+        projects.forEach(p => {
+            if (p.statusHistory) {
+                p.statusHistory.forEach(h => {
+                    list.push({
+                        id: `comment-${h.id}`,
+                        type: 'comment',
+                        title: `Update ${h.type || 'PMO'}`,
+                        message: `Proyecto "${p.name}": "${h.status}"`,
+                        date: h.createdAt || '',
+                        linkView: 'alta-proyecto'
+                    });
+                });
+            }
+        });
+
+        // Ordenar del más reciente al más antiguo
+        return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [projects, risks, changes]);
+
     if (!user) {
         return <AuthView />;
     }
@@ -89,56 +140,6 @@ const MainLayout: React.FC = () => {
             default: return { title: 'PMO System', category: 'Portal' };
         }
     })();
-
-    // Generar feeds de cambios recientes
-    const systemNotifications = React.useMemo(() => {
-        const list: Array<{ id: string; type: 'change' | 'risk' | 'comment'; message: string; date: string; title: string; linkView: string }> = [];
-
-        // 1. Changes
-        changes.forEach(c => {
-            const proj = projects.find(p => p.id === c.projectId);
-            list.push({
-                id: `change-${c.id}`,
-                type: 'change',
-                title: 'Control de Cambio',
-                message: `Proyecto "${proj?.name || 'Desconocido'}": ${c.description} (Reg: ${c.registrationNumber || 'S/N'})`,
-                date: c.date || c.createdAt || '',
-                linkView: 'cambios'
-            });
-        });
-
-        // 2. Risks
-        risks.forEach(r => {
-            const proj = projects.find(p => p.id === r.projectId);
-            list.push({
-                id: `risk-${r.id}`,
-                type: 'risk',
-                title: `Alerta de Riesgo [${r.impact}]`,
-                message: `Proyecto "${proj?.name || 'Desconocido'}": ${r.description}`,
-                date: r.date || r.createdAt || '',
-                linkView: 'riesgos'
-            });
-        });
-
-        // 3. Status History Updates (PMO y Técnicos)
-        projects.forEach(p => {
-            if (p.statusHistory) {
-                p.statusHistory.forEach(h => {
-                    list.push({
-                        id: `comment-${h.id}`,
-                        type: 'comment',
-                        title: `Update ${h.type || 'PMO'}`,
-                        message: `Proyecto "${p.name}": "${h.status}"`,
-                        date: h.createdAt || '',
-                        linkView: 'alta-proyecto'
-                    });
-                });
-            }
-        });
-
-        // Ordenar del más reciente al más antiguo
-        return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [projects, risks, changes]);
 
     const unreadCount = systemNotifications.filter(n => new Date(n.date).getTime() > new Date(lastCheckedNotif).getTime()).length;
 
