@@ -830,7 +830,7 @@ export const HitosView: React.FC = () => {
                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Buscar Hito o Proyecto</label>
                     <div className="relative group">
                         <i className="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-emerald-500 transition-all"></i>
-                        <input type="text" placeholder="Ej: Entrega final, HW, Licencias..." className="w-full h-12 pl-14 pr-6 rounded-2xl bg-gray-50 dark:bg-slate-800/40 border-transparent focus:bg-white dark:focus:bg-slate-800 border-2 focus:border-emerald-500/20 transition-all outline-none text-sm font-medium" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                        <input type="text" placeholder="Ej: Entrega final, HW, Licencias..." className="w-full h-12 !pl-14 pr-6 rounded-2xl bg-gray-50 dark:bg-slate-800/40 border-transparent focus:bg-white dark:focus:bg-slate-800 border-2 focus:border-emerald-500/20 transition-all outline-none text-sm font-medium" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                     </div>
                 </div>
                 <div>
@@ -849,7 +849,7 @@ export const HitosView: React.FC = () => {
                         value={selectedProjectId}
                         onChange={(val) => setSelectedProjectId(val)}
                         placeholder="Buscar proyecto..."
-                        className="h-12"
+                        className="w-full h-12"
                     />
                 </div>
                 <div>
