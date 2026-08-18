@@ -843,8 +843,8 @@ export const HitosView: React.FC = () => {
                     </select>
                 </div>
                 <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Filtrar Proyecto</label>
                     <SearchableSelect
-                        label="Filtrar Proyecto"
                         options={[{ id: 'Todos', label: 'Todos los Proyectos' }, ...projects.map(p => ({ id: p.id, label: `${p.opportunityNumber} - ${p.name}` }))]}
                         value={selectedProjectId}
                         onChange={(val) => setSelectedProjectId(val)}
