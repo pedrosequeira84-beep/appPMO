@@ -75,19 +75,6 @@ export const DashboardView: React.FC = () => {
     }, [projects]);
     const STATUS_COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#9ca3af'];
 
-    // 2. Revenue vs Cost (Top 5 Projects)
-    const revenueCostData = useMemo(() => {
-        return [...projects]
-            .sort((a, b) => ((b.hwValue || 0) + (b.servicesValue || 0)) - ((a.hwValue || 0) + (a.servicesValue || 0)))
-            .slice(0, 5)
-            .map(p => ({
-                name: `${p.name.substring(0, 15)}... (${p.clientName.substring(0, 10)})`,
-                fullName: `${p.name} - ${p.clientName}`,
-                venta: (p.hwValue || 0) + (p.servicesValue || 0),
-                costo: (p.hwCost || 0) + (p.servicesCost || 0)
-            }));
-    }, [projects]);
-
     // 3. Margin % Top Projects
     const marginData = useMemo(() => {
         return [...projects]
@@ -163,29 +150,6 @@ export const DashboardView: React.FC = () => {
         });
     }, [capacityData, team]);
 
-    // 7. Margin Leakage Tracker
-    const marginComparisonData = useMemo(() => {
-        return projects
-            .filter(p => ((p.hwValue || 0) + (p.servicesValue || 0)) > 0)
-            .map(p => {
-                const totalRevenue = (p.hwValue || 0) + (p.servicesValue || 0);
-                const estimatedCost = (p.hwCost || 0) + (p.servicesCost || 0);
-                const actualExpenses = expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + e.amount, 0);
-
-                const targetMargin = p.cm || 0;
-                const currentMargin = ((totalRevenue - (estimatedCost + actualExpenses)) / totalRevenue) * 100;
-
-                return {
-                    name: p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
-                    estimado: Math.round(targetMargin),
-                    real: Math.round(currentMargin),
-                    fullName: p.name
-                };
-            })
-            .sort((a, b) => (a.estimado - a.real) - (b.estimado - b.real)) // Sort by biggest leakage
-            .slice(0, 5);
-    }, [projects, expenses]);
-
     // 8. Top Projects by Effort (Total hours)
     const recentEffortData = useMemo(() => {
         const counts: Record<string, { hours: number; fullLabel: string }> = {};
@@ -211,19 +175,6 @@ export const DashboardView: React.FC = () => {
             .sort((a, b) => b.hours - a.hours)
             .slice(0, 6);
     }, [capacityData, projects]);
-
-    // 9. Resource Load (Current Week)
-    const resourceLoadData = useMemo(() => {
-        const currentWk = getWeekKey(new Date());
-        return team.map(m => {
-            const mAssigns = capacityData.assignments.filter(a => a.memberId === m.id && getWeekKey(new Date(a.date + 'T00:00:00')) === currentWk);
-            const total = mAssigns.reduce((sum, a) => sum + (Number(a.hours) || 0), 0);
-            return {
-                name: m.name.split(' ')[0],
-                hours: total
-            };
-        }).sort((a, b) => b.hours - a.hours);
-    }, [capacityData, team]);
 
     // 10. Portfolio Health Grid — semáforo de todos los proyectos activos, de un vistazo
     const portfolioHealthGrid = useMemo(() => {
@@ -934,7 +885,12 @@ export const DashboardView: React.FC = () => {
                     <i className="fas fa-th-large text-indigo-500"></i>
                     Salud del Portafolio
                 </h3>
-                <p className="text-[10px] text-slate-400 mb-5">Semáforo de todos los proyectos activos (En ejecución + Soporte)</p>
+                <p className="text-[10px] text-slate-400 mb-3">Semáforo de todos los proyectos activos (En ejecución + Soporte)</p>
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-5 text-[10px] text-slate-500 dark:text-slate-400">
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span>Verde: en tiempo y dentro de presupuesto</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500"></span>Amarillo: &gt;15 días de atraso o &gt;90% de presupuesto consumido</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500"></span>Rojo: &gt;30 días de atraso o presupuesto excedido</span>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
                     {portfolioHealthGrid.map(p => {
                         const healthStyles: Record<string, string> = {
@@ -1044,7 +1000,7 @@ export const DashboardView: React.FC = () => {
             </div>
 
             {/* Main Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
                 {/* 1. Status Donut */}
                 <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
                     <h3 className="text-md font-bold mb-1 dark:text-white">Estado de Proyectos</h3>
@@ -1059,25 +1015,7 @@ export const DashboardView: React.FC = () => {
                     </ResponsiveContainer>
                 </div>
 
-                {/* 2. Revenue vs Cost (Top 5) */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
-                    <h3 className="text-md font-bold mb-1 dark:text-white">Ventas vs Costos (Top 5)</h3>
-                    <ResponsiveContainer width="100%" height="90%">
-                        <BarChart data={revenueCostData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
-                            <YAxis fontSize={9} stroke="#94a3b8" />
-                            <Tooltip />
-                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
-                            <Bar dataKey="venta" name="Venta" fill="#0082ff" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="costo" name="Costo" fill="#ff9e2b" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                {/* 3. Top Projects Effort */}
+                {/* 2. Top Projects Effort */}
                 <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
                     <h3 className="text-md font-bold mb-1 dark:text-white">Foco del Mes: Proyectos con más horas</h3>
                     <ResponsiveContainer width="100%" height="90%">
@@ -1104,7 +1042,7 @@ export const DashboardView: React.FC = () => {
                     </ResponsiveContainer>
                 </div>
 
-                {/* 4. Weekly Capacity Load */}
+                {/* 3. Weekly Capacity Load */}
                 <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
                     <h3 className="text-md font-bold mb-1 dark:text-white">Carga del Equipo (%)</h3>
                     <p className="text-[10px] text-slate-400 mb-4">Ocupación semanal vs Disponibilidad (40h)</p>
@@ -1118,38 +1056,6 @@ export const DashboardView: React.FC = () => {
                             <Line type="monotone" dataKey="load" name="% Ocupación" stroke="#0082ff" strokeWidth={3} dot={{ r: 3, fill: '#0082ff', strokeWidth: 1 }} activeDot={{ r: 5 }} />
                             <Line type="step" dataKey="limit" name="Límite" stroke="#f43f5e" strokeDasharray="5 5" dot={false} />
                         </LineChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                {/* 5. Resource Individual Load */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
-                    <h3 className="text-md font-bold mb-1 dark:text-white">Carga Individual (Esta Semana)</h3>
-                    <ResponsiveContainer width="100%" height="90%">
-                        <BarChart data={resourceLoadData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
-                            <YAxis fontSize={9} stroke="#94a3b8" />
-                            <Tooltip />
-                            <Bar dataKey="hours" name="Horas" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-
-                {/* 6. Margin Track (Current vs Target) */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
-                    <h3 className="text-md font-bold mb-1 dark:text-white">Margin Leakage Tracker (%)</h3>
-                    <ResponsiveContainer width="100%" height="90%">
-                        <ComposedChart data={marginComparisonData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
-                            <YAxis fontSize={9} stroke="#94a3b8" unit="%" />
-                            <Tooltip />
-                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
-                            <Bar dataKey="estimado" name="Target CM" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                            <Line type="monotone" dataKey="real" name="Current CM" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', strokeWidth: 1 }} />
-                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
             </div>
