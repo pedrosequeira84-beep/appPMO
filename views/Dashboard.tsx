@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../AppContext';
 import { getPastWeeksKeys, getWeekKey, generateUUID, calculateProjectHealth, parseExcelNumber, formatDate } from '../utils/helpers';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
 import { supabase } from '../utils/supabase';
 import { Project, SEGMENTS, VERTICALS, VENDORS, ProjectStatusUpdate, COST_CATEGORIES } from '../types';
@@ -27,53 +27,7 @@ export const DashboardView: React.FC = () => {
     }, {} as Record<string, number>);
     const projectsInRed = healthStatusCounts['Rojo'] || 0;
 
-    // --- Rankings de Proyectos ---
-    const scheduleRanking = useMemo(() => {
-        return activeProjects
-            .map(p => {
-                const theoretical = new Date(p.theoreticalEndDate);
-                const currentEnd = p.realEndDate ? new Date(p.realEndDate) : new Date();
-                const diffTime = currentEnd.getTime() - theoretical.getTime();
-                return {
-                    name: p.name,
-                    delay: diffTime > 0 ? Math.ceil(diffTime / (1000 * 3600 * 24)) : 0
-                };
-            })
-            .filter(d => d.delay > 0)
-            .sort((a, b) => b.delay - a.delay)
-            .slice(0, 8);
-    }, [activeProjects]);
-
-    const budgetBurnRanking = useMemo(() => {
-        return projects.map(p => {
-            // Use ONLY the detailed/categorized budget from the Costs tab
-            const totalBudget = Object.values(p.budget || {}).reduce<number>((s, v) => s + (Number(v) || 0), 0);
-
-            const actualExpenses = expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-            const burnRate = totalBudget > 0 ? (actualExpenses / totalBudget) * 100 : 0;
-
-            return {
-                name: p.name,
-                burnRate: Math.round(burnRate),
-                hasBudget: totalBudget > 0
-            };
-        })
-            .filter(d => d.hasBudget)
-            .sort((a, b) => b.burnRate - a.burnRate)
-            .slice(0, 8);
-    }, [projects, expenses]);
-
     // --- Chart Data Preparation ---
-
-    // 1. Status Donut
-    const statusData = useMemo(() => {
-        const statuses = ['En ejecución', 'Soporte', 'Intervención temprana', 'POC', 'Finalizado'];
-        return statuses.map(status => ({
-            name: status,
-            value: projects.filter(p => p.status === status).length
-        }));
-    }, [projects]);
-    const STATUS_COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#9ca3af'];
 
     // 3. Margin % Top Projects
     const marginData = useMemo(() => {
@@ -947,75 +901,9 @@ export const DashboardView: React.FC = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 min-h-[400px]">
-                    <h3 className="text-md font-bold mb-1 dark:text-white flex items-center gap-2">
-                        <i className="fas fa-sort-amount-up text-rose-500"></i>
-                        Ranking: Mayores Atrasos (Días)
-                    </h3>
-                    <p className="text-[10px] text-slate-400 mb-6">Proyectos con mayor diferencia entre Fin Teórico y Fecha Actual/Real</p>
-                    <div className="space-y-4">
-                        {scheduleRanking.map((item, idx) => (
-                            <div key={idx} className="flex flex-col gap-1">
-                                <div className="flex justify-between items-end text-xs uppercase font-black text-slate-500 dark:text-slate-400">
-                                    <span className="truncate pr-4 font-bold">{item.name}</span>
-                                    <span className="text-rose-500 dark:text-rose-400 font-mono text-sm">{item.delay} días</span>
-                                </div>
-                                <div className="w-full h-2 bg-slate-50 dark:bg-slate-800 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-rose-400 to-rose-600 rounded-full shadow-[0_0_8px_rgba(244,63,94,0.3)]"
-                                        style={{ width: `${Math.min(100, (item.delay / (scheduleRanking[0]?.delay || 1)) * 100)}%` }}
-                                    ></div>
-                                </div>
-                            </div>
-                        ))}
-                        {scheduleRanking.length === 0 && <p className="text-center py-10 text-gray-400 italic">No hay proyectos con atraso</p>}
-                    </div>
-                </div>
-
-                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 min-h-[400px]">
-                    <h3 className="text-md font-bold mb-1 dark:text-white flex items-center gap-2">
-                        <i className="fas fa-fire text-amber-500"></i>
-                        Ranking: Consumo de Presupuesto (%)
-                    </h3>
-                    <p className="text-[10px] text-slate-400 mb-6">Gasto Real vs Presupuesto de Costos Estimado</p>
-                    <div className="space-y-4">
-                        {budgetBurnRanking.map((item, idx) => (
-                            <div key={idx} className="flex flex-col gap-1">
-                                <div className="flex justify-between items-end text-xs uppercase font-black text-slate-500 dark:text-slate-400">
-                                    <span className="truncate pr-4 font-bold">{item.name}</span>
-                                    <span className={`font-mono text-sm ${item.burnRate > 100 ? 'text-rose-500' : 'text-amber-500'}`}>{item.burnRate}%</span>
-                                </div>
-                                <div className="w-full h-2 bg-slate-50 dark:bg-slate-800 rounded-full overflow-hidden">
-                                    <div
-                                        className={`h-full rounded-full ${item.burnRate > 100 ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]' : 'bg-gradient-to-r from-amber-400 to-amber-500'}`}
-                                        style={{ width: `${Math.min(100, item.burnRate)}%` }}
-                                    ></div>
-                                </div>
-                            </div>
-                        ))}
-                        {budgetBurnRanking.length === 0 && <p className="text-center py-10 text-gray-400 italic">No hay datos de consumo</p>}
-                    </div>
-                </div>
-            </div>
-
             {/* Main Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                {/* 1. Status Donut */}
-                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
-                    <h3 className="text-md font-bold mb-1 dark:text-white">Estado de Proyectos</h3>
-                    <ResponsiveContainer width="100%" height="90%">
-                        <PieChart>
-                            <Pie data={statusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
-                                {statusData.map((_entry: any, index: number) => (<Cell key={`cell-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-
-                {/* 2. Top Projects Effort */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                {/* 1. Top Projects Effort */}
                 <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
                     <h3 className="text-md font-bold mb-1 dark:text-white">Foco del Mes: Proyectos con más horas</h3>
                     <ResponsiveContainer width="100%" height="90%">
@@ -1042,7 +930,7 @@ export const DashboardView: React.FC = () => {
                     </ResponsiveContainer>
                 </div>
 
-                {/* 3. Weekly Capacity Load */}
+                {/* 2. Weekly Capacity Load */}
                 <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
                     <h3 className="text-md font-bold mb-1 dark:text-white">Carga del Equipo (%)</h3>
                     <p className="text-[10px] text-slate-400 mb-4">Ocupación semanal vs Disponibilidad (40h)</p>
