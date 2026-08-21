@@ -225,6 +225,131 @@ export const DashboardView: React.FC = () => {
         }).sort((a, b) => b.hours - a.hours);
     }, [capacityData, team]);
 
+    // 10. Portfolio Health Grid — semáforo de todos los proyectos activos, de un vistazo
+    const portfolioHealthGrid = useMemo(() => {
+        return activeProjects.map(p => ({
+            id: p.id,
+            name: p.name,
+            client: p.clientName,
+            pm: p.pm,
+            opportunityNumber: p.opportunityNumber,
+            health: calculateProjectHealth(p, expenses)
+        })).sort((a, b) => {
+            const order: Record<string, number> = { Rojo: 0, Amarillo: 1, Verde: 2 };
+            return (order[a.health] ?? 3) - (order[b.health] ?? 3);
+        });
+    }, [activeProjects, expenses]);
+
+    // 11. EVM-lite: SPI/CPI aproximado por proyecto y de portafolio (PMBOK Earned Value Management)
+    // EV = Presupuesto Total x % Avance Real | PV = Presupuesto Total x % Tiempo Transcurrido | AC = Gasto Real
+    const evmData = useMemo(() => {
+        const today = new Date();
+        const rows = activeProjects.map(p => {
+            const totalBudget = Object.values(p.budget || {}).reduce<number>((s, v) => s + (Number(v) || 0), 0);
+            if (totalBudget <= 0) return null;
+
+            const actualCost = expenses.filter(e => e.projectId === p.id).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+            const start = new Date(p.startDate);
+            const end = new Date(p.theoreticalEndDate);
+            const totalDuration = end.getTime() - start.getTime();
+            const elapsed = Math.min(Math.max(today.getTime() - start.getTime(), 0), totalDuration > 0 ? totalDuration : 0);
+            const plannedPct = totalDuration > 0 ? elapsed / totalDuration : 0;
+            const actualPct = Math.min(Math.max((p.progress || 0) / 100, 0), 1);
+
+            const ev = totalBudget * actualPct;
+            const pv = totalBudget * plannedPct;
+            const ac = actualCost;
+
+            return {
+                name: p.name,
+                opportunityNumber: p.opportunityNumber,
+                ev, pv, ac,
+                cpi: ac > 0 ? ev / ac : null,
+                spi: pv > 0 ? ev / pv : null
+            };
+        }).filter((r): r is NonNullable<typeof r> => r !== null);
+
+        const totalEV = rows.reduce((s, r) => s + r.ev, 0);
+        const totalAC = rows.reduce((s, r) => s + r.ac, 0);
+        const totalPV = rows.reduce((s, r) => s + r.pv, 0);
+
+        const worst = [...rows]
+            .filter(r => r.cpi !== null || r.spi !== null)
+            .sort((a, b) => Math.min(a.cpi ?? 1, a.spi ?? 1) - Math.min(b.cpi ?? 1, b.spi ?? 1))
+            .slice(0, 6);
+
+        return {
+            rows: worst,
+            portfolioCPI: totalAC > 0 ? totalEV / totalAC : null,
+            portfolioSPI: totalPV > 0 ? totalEV / totalPV : null
+        };
+    }, [activeProjects, expenses]);
+
+    // 12. Tendencia de Riesgos Críticos detectados por mes (últimos 6 meses)
+    const riskTrendData = useMemo(() => {
+        const now = new Date();
+        const months = Array.from({ length: 6 }, (_, idx) => {
+            const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1);
+            return { key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString('es-AR', { month: 'short' }).replace('.', '') };
+        });
+        return months.map(m => {
+            const count = risks.filter(r => {
+                if (!(r.impact === 'Alto' || r.isProblem)) return false;
+                const d = new Date(r.date || r.createdAt);
+                if (isNaN(d.getTime())) return false;
+                return `${d.getFullYear()}-${d.getMonth()}` === m.key;
+            }).length;
+            return { name: m.label, criticos: count };
+        });
+    }, [risks]);
+
+    // 13. Matriz de Riesgo (Probabilidad x Impacto) — riesgos abiertos (no mitigados)
+    const riskMatrixData = useMemo(() => {
+        const probs = ['Alta', 'Media', 'Baja'];
+        const impacts = ['Bajo', 'Medio', 'Alto'];
+        const openRisks = risks.filter(r => !r.isMitigated);
+        const grid: Record<string, number> = {};
+        openRisks.forEach(r => {
+            const key = `${r.probability}|${r.impact}`;
+            grid[key] = (grid[key] || 0) + 1;
+        });
+        return { probs, impacts, grid, total: openRisks.length };
+    }, [risks]);
+
+    // 14. Cumplimiento de Hitos — % cobrado en fecha vs tarde
+    const milestoneComplianceData = useMemo(() => {
+        const withRealDate = milestones.filter(m => m.isReceived && m.realDate);
+        const onTime = withRealDate.filter(m => new Date(m.realDate!) <= new Date(m.date)).length;
+        const late = withRealDate.length - onTime;
+        const pending = milestones.filter(m => !m.isReceived).length;
+        const pct = withRealDate.length > 0 ? Math.round((onTime / withRealDate.length) * 100) : null;
+        return { onTime, late, pending, pct, total: withRealDate.length };
+    }, [milestones]);
+
+    // 15. Próximos 90 días — Hitos por cobrar + Fin de Proyecto
+    const upcoming90DaysData = useMemo(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const limit = new Date(today);
+        limit.setDate(limit.getDate() + 90);
+
+        const milestoneEvents = milestones
+            .filter(m => !m.isReceived && m.date)
+            .map(m => {
+                const p = projects.find(px => px.id === m.projectId);
+                return { date: new Date(m.date), label: m.description, project: p?.name || 'Proyecto', type: 'Hito' as const, amount: m.amount, currency: m.currency };
+            });
+
+        const projectEndEvents = projects
+            .filter(p => p.status !== 'Finalizado' && p.status !== 'Cancelado' && p.theoreticalEndDate)
+            .map(p => ({ date: new Date(p.theoreticalEndDate), label: 'Fin de Proyecto (Teórico)', project: p.name, type: 'Fin Proyecto' as const, amount: undefined as number | undefined, currency: undefined as string | undefined }));
+
+        return [...milestoneEvents, ...projectEndEvents]
+            .filter(ev => !isNaN(ev.date.getTime()) && ev.date >= today && ev.date <= limit)
+            .sort((a, b) => a.date.getTime() - b.date.getTime())
+            .slice(0, 12);
+    }, [milestones, projects]);
+
     // --- Export/Import Logic ---
 
     const exportToExcel = () => {
@@ -803,6 +928,69 @@ export const DashboardView: React.FC = () => {
                 />
             </div>
 
+            {/* Portfolio Health Grid — semáforo de todo el portafolio activo, de un vistazo */}
+            <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 mb-8">
+                <h3 className="text-md font-bold mb-1 dark:text-white flex items-center gap-2">
+                    <i className="fas fa-th-large text-indigo-500"></i>
+                    Salud del Portafolio
+                </h3>
+                <p className="text-[10px] text-slate-400 mb-5">Semáforo de todos los proyectos activos (En ejecución + Soporte)</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                    {portfolioHealthGrid.map(p => {
+                        const healthStyles: Record<string, string> = {
+                            Rojo: 'border-rose-200 dark:border-rose-900/40 bg-rose-50/60 dark:bg-rose-950/20',
+                            Amarillo: 'border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20',
+                            Verde: 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-950/20'
+                        };
+                        const dotStyles: Record<string, string> = { Rojo: 'bg-rose-500', Amarillo: 'bg-amber-500', Verde: 'bg-emerald-500' };
+                        return (
+                            <div key={p.id} title={`${p.name} — ${p.client} — PM: ${p.pm}`} className={`rounded-xl border p-3 ${healthStyles[p.health] || healthStyles.Verde}`}>
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${dotStyles[p.health] || dotStyles.Verde}`}></span>
+                                    <span className="text-[9px] font-black text-slate-400 uppercase truncate">{p.opportunityNumber}</span>
+                                </div>
+                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
+                                <p className="text-[9px] text-slate-400 truncate mt-0.5">{p.client}</p>
+                            </div>
+                        );
+                    })}
+                    {portfolioHealthGrid.length === 0 && <p className="col-span-full text-center py-8 text-gray-400 italic text-sm">No hay proyectos activos.</p>}
+                </div>
+            </div>
+
+            {/* EVM-lite: SPI / CPI de portafolio */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 flex flex-col justify-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">SPI Portafolio (Cronograma)</p>
+                    <p className={`text-4xl font-black ${evmData.portfolioSPI === null ? 'text-slate-400' : evmData.portfolioSPI >= 1 ? 'text-emerald-500' : evmData.portfolioSPI >= 0.9 ? 'text-amber-500' : 'text-rose-500'}`}>
+                        {evmData.portfolioSPI === null ? '—' : evmData.portfolioSPI.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-2">{'>'}1 adelantado · =1 en tiempo · {'<'}1 atrasado</p>
+                </div>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 flex flex-col justify-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">CPI Portafolio (Costo)</p>
+                    <p className={`text-4xl font-black ${evmData.portfolioCPI === null ? 'text-slate-400' : evmData.portfolioCPI >= 1 ? 'text-emerald-500' : evmData.portfolioCPI >= 0.9 ? 'text-amber-500' : 'text-rose-500'}`}>
+                        {evmData.portfolioCPI === null ? '—' : evmData.portfolioCPI.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-2">{'>'}1 bajo presupuesto · =1 en presupuesto · {'<'}1 sobre presupuesto</p>
+                </div>
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 lg:col-span-1">
+                    <h3 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Peor SPI/CPI (Top 6)</h3>
+                    <div className="space-y-2.5 max-h-40 overflow-y-auto">
+                        {evmData.rows.map((r, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs">
+                                <span className="truncate pr-3 font-bold text-slate-600 dark:text-slate-400">{r.name}</span>
+                                <span className="flex gap-2 shrink-0 font-mono">
+                                    <span className={r.spi !== null && r.spi < 0.9 ? 'text-rose-500 font-bold' : 'text-slate-400'}>SPI {r.spi !== null ? r.spi.toFixed(2) : '—'}</span>
+                                    <span className={r.cpi !== null && r.cpi < 0.9 ? 'text-rose-500 font-bold' : 'text-slate-400'}>CPI {r.cpi !== null ? r.cpi.toFixed(2) : '—'}</span>
+                                </span>
+                            </div>
+                        ))}
+                        {evmData.rows.length === 0 && <p className="text-center py-6 text-gray-400 italic text-xs">Sin datos de presupuesto suficientes.</p>}
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 min-h-[400px]">
                     <h3 className="text-md font-bold mb-1 dark:text-white flex items-center gap-2">
@@ -963,6 +1151,99 @@ export const DashboardView: React.FC = () => {
                             <Line type="monotone" dataKey="real" name="Current CM" stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', strokeWidth: 1 }} />
                         </ComposedChart>
                     </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* Matriz de Riesgo + Tendencia de Riesgos Críticos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Matriz de Riesgo (Probabilidad x Impacto)</h3>
+                    <p className="text-[10px] text-slate-400 mb-4">{riskMatrixData.total} riesgos abiertos (no mitigados)</p>
+                    <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-1.5 text-center">
+                        <div></div>
+                        {riskMatrixData.impacts.map(imp => <div key={imp} className="text-[9px] font-black text-slate-400 uppercase self-end pb-1">{imp}</div>)}
+                        {riskMatrixData.probs.map(prob => (
+                            <React.Fragment key={prob}>
+                                <div className="text-[9px] font-black text-slate-400 uppercase flex items-center justify-end pr-2">{prob}</div>
+                                {riskMatrixData.impacts.map(imp => {
+                                    const count = riskMatrixData.grid[`${prob}|${imp}`] || 0;
+                                    const severe = (prob === 'Alta' && imp !== 'Bajo') || (imp === 'Alto' && prob !== 'Baja');
+                                    const mild = prob === 'Baja' && imp === 'Bajo';
+                                    const cellClass = count === 0
+                                        ? 'bg-slate-50 dark:bg-slate-800/40 text-slate-400 dark:text-slate-700'
+                                        : severe ? 'bg-rose-500 text-white' : mild ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400';
+                                    return (
+                                        <div key={imp} className={`rounded-xl h-14 flex items-center justify-center text-lg font-black ${cellClass}`}>
+                                            {count > 0 ? count : ''}
+                                        </div>
+                                    );
+                                })}
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40 h-80">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Tendencia: Riesgos Críticos Detectados por Mes</h3>
+                    <p className="text-[10px] text-slate-400 mb-4">Últimos 6 meses (Impacto Alto o marcados como Problema)</p>
+                    <ResponsiveContainer width="100%" height="80%">
+                        <LineChart data={riskTrendData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" fontSize={9} stroke="#94a3b8" />
+                            <YAxis allowDecimals={false} fontSize={9} stroke="#94a3b8" />
+                            <Tooltip />
+                            <Line type="monotone" dataKey="criticos" name="Riesgos Críticos" stroke="#f43f5e" strokeWidth={3} dot={{ r: 4, fill: '#f43f5e', strokeWidth: 1 }} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* Cumplimiento de Hitos + Próximos 90 días */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Cumplimiento de Hitos</h3>
+                    <p className="text-[10px] text-slate-400 mb-5">% cobrado en fecha vs tarde (sobre hitos ya recepcionados)</p>
+                    <div className="flex items-center gap-8">
+                        <div className="shrink-0">
+                            <p className={`text-5xl font-black ${milestoneComplianceData.pct === null ? 'text-slate-400' : milestoneComplianceData.pct >= 80 ? 'text-emerald-500' : milestoneComplianceData.pct >= 60 ? 'text-amber-500' : 'text-rose-500'}`}>
+                                {milestoneComplianceData.pct === null ? '—' : `${milestoneComplianceData.pct}%`}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-wide">En fecha</p>
+                        </div>
+                        <div className="flex-1 grid grid-cols-3 gap-3 text-center">
+                            <div>
+                                <p className="text-xl font-black text-emerald-500">{milestoneComplianceData.onTime}</p>
+                                <p className="text-[9px] text-slate-400 uppercase font-bold">A tiempo</p>
+                            </div>
+                            <div>
+                                <p className="text-xl font-black text-rose-500">{milestoneComplianceData.late}</p>
+                                <p className="text-[9px] text-slate-400 uppercase font-bold">Tarde</p>
+                            </div>
+                            <div>
+                                <p className="text-xl font-black text-slate-400">{milestoneComplianceData.pending}</p>
+                                <p className="text-[9px] text-slate-400 uppercase font-bold">Pendientes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-dark-card p-6 rounded-2xl shadow-premium border border-slate-100/80 dark:border-dark-border/40">
+                    <h3 className="text-md font-bold mb-1 dark:text-white">Próximos 90 Días</h3>
+                    <p className="text-[10px] text-slate-400 mb-4">Hitos por cobrar y fines de proyecto teóricos</p>
+                    <div className="space-y-2.5 max-h-56 overflow-y-auto">
+                        {upcoming90DaysData.map((ev, idx) => (
+                            <div key={idx} className="flex items-center gap-3 text-xs">
+                                <span className={`shrink-0 w-16 text-[10px] font-mono font-bold ${ev.type === 'Fin Proyecto' ? 'text-indigo-500' : 'text-emerald-500'}`}>{formatDate(ev.date.toISOString())}</span>
+                                <span className={`shrink-0 text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${ev.type === 'Fin Proyecto' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'}`}>{ev.type}</span>
+                                <span className="flex-1 truncate">
+                                    <span className="font-bold text-slate-700 dark:text-slate-200">{ev.project}</span>
+                                    <span className="text-slate-400"> — {ev.label}</span>
+                                </span>
+                                {ev.amount !== undefined && <span className="shrink-0 font-mono text-slate-500">{ev.currency || 'USD'} {ev.amount.toLocaleString()}</span>}
+                            </div>
+                        ))}
+                        {upcoming90DaysData.length === 0 && <p className="text-center py-10 text-gray-400 italic text-xs">Nada programado en los próximos 90 días.</p>}
+                    </div>
                 </div>
             </div>
 
